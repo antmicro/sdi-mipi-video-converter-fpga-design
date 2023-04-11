@@ -27,7 +27,6 @@ from migen import *
 from migen.fhdl.verilog import convert as convert_migen
 
 from sdi2mipi import SDI2MIPI
-from divider import Divider
 from detector import DetectTRS
 from aligner import Aligner
 from timing_gen import create_timing_generator
@@ -80,7 +79,7 @@ SIM_PARAMS = {
 def params_to_iverilog_opts(params):
     opt_str = ""
     for k, v in params.items():
-        opt_str += f"-P{k}={v} "
+        opt_str += f"-Piver_tb.{k}={v} "
     return opt_str
 
 
@@ -153,6 +152,7 @@ def test_detector():
 def test_timing_gen(video_format):
     timing_gen = create_timing_generator(video_format)
     iverilog_opts = params_to_iverilog_opts(SIM_PARAMS[video_format])
+    print(iverilog_opts)
     simulate_module(
         timing_gen, "timing_gen", "timing_gen_tb.v", f"build/timing_gen", iverilog_opts
     )

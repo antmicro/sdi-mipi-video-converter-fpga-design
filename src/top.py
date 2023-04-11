@@ -131,10 +131,22 @@ class Top(Module):
                 self.sdi2mipi.hsync_i.eq(des_hsync),
             ]
 
+        if sim:
+            self.comb += [
+                self.cmos2dphy.fv_i.eq(~des_vsync),
+                self.cmos2dphy.lv_i.eq(~des_hsync),
+            ]
+        else:
+            self.comb += [
+                self.cmos2dphy.fv_i.eq(self.sdi2mipi.fv_o),
+                self.cmos2dphy.lv_i.eq(self.sdi2mipi.lv_o),
+            ]
+
         self.comb += [
-            self.cmos2dphy.fv_i.eq(self.sdi2mipi.fv_o),
-            self.cmos2dphy.lv_i.eq(self.sdi2mipi.lv_o),
-            user_led_o.eq(self.cmos2dphy.tinit_done_o),
+            self.cmos2dphy.vc_i.eq(0),    # Virtual channel 0
+            self.cmos2dphy.dt_i.eq(0x1e), # YUV422 8-bit
+            self.cmos2dphy.wc_i.eq(3840), # 1920 pixels, 16-bit each
+            user_led_o.eq(self.cmos2dphy.tx_dphy.txgo.tinit_done_o),
         ]
 
         # Internal oscillator set to 225 MHz
@@ -146,21 +158,27 @@ class Top(Module):
             o_HFCLKOUT = hfclkout,
         )
 
-        COUNTER_1s = 225000000
-        COUNTER_100us = COUNTER_1s // 1000000
-        counter = Signal(max=COUNTER_1s)
-
-        self.sync.hfc += [
-            counter.eq(counter + 1),
-            If((counter > COUNTER_100us) & (~des_reset_n),
+        if sim:
+            self.sync.hfc += [
                 des_reset_n.eq(1),
-            ),
-            If((counter > COUNTER_1s) & (~reset_n),
                 reset_n.eq(1),
-                counter.eq(0),
-                cdone_led_o.eq(~cdone_led_o),
-            ),
-        ]
+            ]
+        else:
+            COUNTER_1s = 225000000
+            COUNTER_100us = COUNTER_1s // 1000000
+            counter = Signal(max=COUNTER_1s)
+
+            self.sync.hfc += [
+                counter.eq(counter + 1),
+                If((counter > COUNTER_100us) & (~des_reset_n),
+                    des_reset_n.eq(1),
+                ),
+                If((counter > COUNTER_1s) & (~reset_n),
+                    reset_n.eq(1),
+                    counter.eq(0),
+                    cdone_led_o.eq(~cdone_led_o),
+                ),
+            ]
 
 
 if __name__ == "__main__":
