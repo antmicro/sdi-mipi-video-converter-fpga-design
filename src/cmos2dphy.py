@@ -17,6 +17,7 @@ from migen import *
 from migen.fhdl.verilog import convert
 from migen.fhdl.module import Module
 from migen.genlib.fifo import AsyncFIFO
+from packet_formatter import PacketFormatter
 
 __all__ = ["CMOS2DPHY"]
 
@@ -77,6 +78,9 @@ class CMOS2DPHY(Module):
             FSM(reset_state="WAIT_FV_START")
         )
 
+        self.submodules.packet_formatter = packet_formatter = \
+            ClockDomainsRenamer("byte")(PacketFormatter())
+
         d_hs_rdy = Signal()
         fv_d = Signal()
         lv_d = Signal()
@@ -86,7 +90,6 @@ class CMOS2DPHY(Module):
         dt = Signal(6)
         wc = Signal(16)
         txfr_req = Signal()
-        txfr_en = Signal()
         c2d_ready = Signal()
         c2d_ready = Signal()
         phdr_xfr_done = Signal()
@@ -147,7 +150,10 @@ class CMOS2DPHY(Module):
         )
         fsm.act("WAIT_FV_START_DONE",
             NextValue(sp_en, 0),
-            If(phdr_xfr_done_d[0] & ~phdr_xfr_done_d[1],
+            If(~phdr_xfr_done,
+                w_byte_data.eq(packet_formatter.data_o),
+                w_byte_data_en.eq(1),
+            ).Else(
                 If(lv_start,
                     NextState("LV_START"),
                 ).Elif(self.lv_i,
@@ -177,7 +183,9 @@ class CMOS2DPHY(Module):
             NextValue(lp_en, 0),
             dt.eq(0x1e),
             wc.eq(3840),
-            If((~ld_pyld & ~ld_pyld_d[0] & ld_pyld_d[1]),
+            w_byte_data.eq(packet_formatter.data_o),
+            w_byte_data_en.eq(1),
+            If((~ld_pyld & ld_pyld_d[0]),
                 NextState("LP_XFR"),
             ),
         )
@@ -187,13 +195,21 @@ class CMOS2DPHY(Module):
             wc.eq(3840),
             If(fifo.readable,
                 fifo.re.eq(1),
+                w_byte_data.eq(fifo.dout),
                 w_byte_data_en.eq(1),
             ),
-            If(phdr_xfr_done_d[0] & ~phdr_xfr_done_d[1],
+            If(phdr_xfr_done,
+                w_byte_data.eq(packet_formatter.data_o),
+                w_byte_data_en.eq(1),
                 NextState("LV_END"),
             ),
         )
         fsm.act("LV_END",
+            If(phdr_xfr_done,
+                w_byte_data.eq(packet_formatter.data_o),
+                w_byte_data_en.eq(1),
+                NextState("LV_END"),
+            ),
             If(~self.fv_i & c2d_ready,
                 hs_req.eq(1),
                 NextState("FV_END"),
@@ -214,7 +230,10 @@ class CMOS2DPHY(Module):
             NextValue(sp_en, 0),
             dt.eq(1),
             wc.eq(0),
-            If(phdr_xfr_done_d[0] & ~phdr_xfr_done_d[1],
+            If(~phdr_xfr_done,
+                w_byte_data.eq(packet_formatter.data_o),
+                w_byte_data_en.eq(1),
+            ).Else(
                 NextState("WAIT_FV_START"),
             ),
         )
@@ -222,7 +241,6 @@ class CMOS2DPHY(Module):
         self.comb += [
             fifo.reset_sys.eq(~self.fv_i),
             fifo.reset_byte.eq(~self.fv_i),
-            w_byte_data.eq(fifo.dout),
             txfr_req.eq(c2d_ready & (fv_start | fv_end | lv_start | hs_req)),
             byte_data_en.eq(self.fv_i & self.lv_i),
         ]
@@ -244,6 +262,17 @@ class CMOS2DPHY(Module):
             phdr_xfr_done_d[1].eq(phdr_xfr_done_d[0]),
         ]
 
+        self.comb += [
+            packet_formatter.byte_data_i.eq(fifo.dout),
+            packet_formatter.vc_i.eq(0),
+            packet_formatter.wc_i.eq(wc),
+            packet_formatter.dt_i.eq(dt),
+            packet_formatter.sp_en_i.eq(sp_en),
+            packet_formatter.lp_en_i.eq(lp_en),
+            phdr_xfr_done.eq(packet_formatter.phdr_xfr_done_o),
+            ld_pyld.eq(packet_formatter.ld_pyld_o),
+        ]
+
         self.specials += Instance("byte2dphy_instance",
             i_reset_n_i             = ~ResetSignal(),
             i_ref_clk_i             = ClockSignal(),
@@ -252,23 +281,16 @@ class CMOS2DPHY(Module):
             i_byte_or_pkt_data_i    = w_byte_data,
             i_byte_or_pkt_data_en_i = w_byte_data_en,
             o_ready_o               = dphy_ready,
-            i_vc_i                  = 0,
-            i_dt_i                  = dt,
-            i_wc_i                  = wc,
             i_clk_hs_en_i           = txfr_req,
             i_d_hs_en_i             = txfr_req,
             o_tinit_done_o          = self.tinit_done_o,
             o_d_hs_rdy_o            = d_hs_rdy,
             o_byte_clk_o            = ClockSignal("byte"),
             o_c2d_ready_o           = c2d_ready,
-            o_phdr_xfr_done_o       = phdr_xfr_done,
-            o_ld_pyld_o             = ld_pyld,
-            i_clk_p_io              = mipi_dphy_clk_p_io,
-            i_clk_n_io              = mipi_dphy_clk_n_io,
-            i_d_p_io                = mipi_dphy_data_p,
-            i_d_n_io                = mipi_dphy_data_n,
-            i_sp_en_i               = sp_en,
-            i_lp_en_i               = lp_en,
+            o_clk_p_io              = mipi_dphy_clk_p_io,
+            o_clk_n_io              = mipi_dphy_clk_n_io,
+            o_d_p_io                = mipi_dphy_data_p,
+            o_d_n_io                = mipi_dphy_data_n,
             synthesis_directive     = "loc=\"DPHY%s\"" % dphy_loc,
         )
         # fmt: on
