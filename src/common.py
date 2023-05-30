@@ -13,6 +13,26 @@
 # limitations under the License.
 
 
+dphy_timings = {
+    "1080p30": {
+        "CN": "0b10000",# 3
+        "CM": "0b10100000", # 96
+        "CO": "0b010", # 4
+        "TINIT_VALUE": 15000,
+        "T_LPX": 4,
+        "T_DATPREP": 4,
+        "T_DAT_HSZERO": 10,
+        "T_DATTRAIL": 13,
+        "T_DATEXIT": 9,
+        "T_CLKPREP": 3,
+        "T_CLK_HSZERO": 20,
+        "T_CLKPRE": 1,
+        "T_CLKPOST": 10,
+        "T_CLKTRAIL": 6,
+    }
+}
+
+
 class UnsupportedVideoFormatException(Exception):
     def __init__(self, supported_video_formats):
         msg = "Unsupported video format. Available options are: {"

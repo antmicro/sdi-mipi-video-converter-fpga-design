@@ -18,22 +18,26 @@ from migen.fhdl.verilog import convert
 from migen.fhdl.module import Module
 from migen.genlib.fifo import AsyncFIFO
 from packet_formatter import PacketFormatter
+from mipi_dphy import TXDPHY
 
 __all__ = ["CMOS2DPHY"]
 
 
 class CMOS2DPHY(Module):
-    def __init__(self, mipi_dphy_ios, four_lanes=False, dphy_loc=1):
-        assert dphy_loc in [0, 1]
+    def __init__(self, mipi_dphy_ios, four_lanes=False, sim=False):
         assert four_lanes in [True, False]
+        assert sim in [True, False]
 
-        self.clock_domains.cd_byte = ClockDomain("byte", reset_less=True)
+        self.clock_domains.cd_byte = ClockDomain("byte")
 
         # Inputs
         self.fv_i = Signal()
         self.lv_i = Signal()
         self.pix_data0_i = Signal(8)
         self.pix_data1_i = Signal(8)
+        self.vc_i = Signal(2)
+        self.dt_i = Signal(6)
+        self.wc_i = Signal(16)
 
         mipi_dphy_clk_n_io = mipi_dphy_ios["mipi_clk_n_o"]
         mipi_dphy_clk_p_io = mipi_dphy_ios["mipi_clk_p_o"]
@@ -59,52 +63,78 @@ class CMOS2DPHY(Module):
 
         # Outputs
         self.tinit_done_o = Signal()
+        self.dphy_ready_o = dphy_ready = Signal()
+        self.sp_en_o = sp_en = Signal()
+        self.lp_en_o = lp_en = Signal()
+        self.txfr_req_o = txfr_req = Signal()
+        self.d_hs_rdy_o = d_hs_rdy = Signal()
+        self.phdr_xfr_done_o = phdr_xfr_done = Signal()
+        self.dt_o = dt = Signal(6)
+        self.wc_o = wc = Signal(16)
 
         self.ios = {
+            self.cd_byte.clk,
+            self.cd_byte.rst,
             self.fv_i,
             self.lv_i,
             self.pix_data0_i,
             self.pix_data1_i,
+            self.vc_i,
+            self.dt_i,
+            self.wc_i,
         }
         self.ios.update(mipi_dphy_ios.values())
 
-        # Internal logic
+        if sim:
+            self.ios.update((
+                self.tinit_done_o,
+                self.dphy_ready_o,
+                self.sp_en_o,
+                self.lp_en_o,
+                self.txfr_req_o,
+                self.d_hs_rdy_o,
+                self.phdr_xfr_done_o,
+                self.dt_o,
+                self.wc_o,
+            ))
+
+        # FIFO between pixel clock and byte clock domains
         self.submodules.fifo = fifo = ResetInserter(["sys", "byte"])(
             ClockDomainsRenamer({"write": "sys", "read": "byte"})(
-                AsyncFIFO(width=16, depth=128)
+                AsyncFIFO(width=16, depth=512)
             )
         )
+
+        # FSM to control CSI-2 protocol
         self.submodules.fsm = fsm = ClockDomainsRenamer("byte")(
             FSM(reset_state="WAIT_FV_START")
         )
 
+        # Packet Formatter - Low Level Protocol
         self.submodules.packet_formatter = packet_formatter = \
             ClockDomainsRenamer("byte")(PacketFormatter())
 
-        d_hs_rdy = Signal()
+        # Hardened TX D-PHY with TX Global Operations
+        self.submodules.tx_dphy = tx_dphy = TXDPHY(sim=sim)
+        txgo = tx_dphy.txgo
+
+        # Internal signals
+        pixdata = Cat(self.pix_data0_i, self.pix_data1_i)
+        pixdata_d = Signal().like(pixdata)
+
         fv_d = Signal()
         lv_d = Signal()
-        dphy_ready = Signal()
         w_byte_data = Signal(16)
         w_byte_data_en = Signal()
-        dt = Signal(6)
-        wc = Signal(16)
-        txfr_req = Signal()
-        c2d_ready = Signal()
-        c2d_ready = Signal()
-        phdr_xfr_done = Signal()
         phdr_xfr_done_d = [Signal() for _ in range(2)]
         ld_pyld = Signal()
         ld_pyld_d = [Signal() for _ in range(2)]
-
-        sp_en = Signal()
-        lp_en = Signal()
 
         byte_data_en = Signal()
         hs_req = Signal()
 
         fv_start = Signal()
-        fv_start = Signal()
+        fv_start_d = Signal()
         fv_end = Signal()
         lv_start = Signal()
         lv_end = Signal()
@@ -133,9 +163,14 @@ class CMOS2DPHY(Module):
                 lv_start.eq(0),
                 lv_end.eq(0)
             ),
+
+            pixdata_d.eq(pixdata),
+            fv_start_d.eq(fv_start),
         ]
 
         fsm.act("WAIT_FV_START",
+            fifo.reset_sys.eq(1),
+            fifo.reset_byte.eq(1),
             If(fv_start,
                 NextState("FV_START"),
             ),
@@ -157,13 +192,16 @@ class CMOS2DPHY(Module):
                 If(lv_start,
                     NextState("LV_START"),
                 ).Elif(self.lv_i,
-                    dt.eq(0x1e),
-                    wc.eq(3840),
-                    NextValue(lp_en, 1),
-                    NextState("LP_XFR"),
+                    NextState("HS_REQ"),
                 ).Else(
                     NextState("WAIT_LV_START"),
                 ),
+            ),
+        )
+        fsm.act("HS_REQ",
+            If(dphy_ready,
+                hs_req.eq(1),
+                NextState("LV_START"),
             ),
         )
         fsm.act("WAIT_LV_START",
@@ -173,16 +211,16 @@ class CMOS2DPHY(Module):
         )
         fsm.act("LV_START",
             If(d_hs_rdy,
-                dt.eq(0x1e),
-                wc.eq(3840),
+                dt.eq(self.dt_i),
+                wc.eq(self.wc_i),
                 NextValue(lp_en, 1),
                 NextState("WAIT_FOR_PHDR"),
             ),
         )
         fsm.act("WAIT_FOR_PHDR",
             NextValue(lp_en, 0),
-            dt.eq(0x1e),
-            wc.eq(3840),
+            dt.eq(self.dt_i),
+            wc.eq(self.wc_i),
             w_byte_data.eq(packet_formatter.data_o),
             w_byte_data_en.eq(1),
             If((~ld_pyld & ld_pyld_d[0]),
@@ -191,26 +229,21 @@ class CMOS2DPHY(Module):
         )
         fsm.act("LP_XFR",
             NextValue(lp_en, 0),
-            dt.eq(0x1e),
-            wc.eq(3840),
+            dt.eq(self.dt_i),
+            wc.eq(self.wc_i),
+            w_byte_data_en.eq(1),
             If(fifo.readable,
                 fifo.re.eq(1),
                 w_byte_data.eq(fifo.dout),
-                w_byte_data_en.eq(1),
-            ),
-            If(phdr_xfr_done,
+            ).Else(
                 w_byte_data.eq(packet_formatter.data_o),
-                w_byte_data_en.eq(1),
-                NextState("LV_END"),
+                If(phdr_xfr_done,
+                    NextState("LV_END"),
+                ),
             ),
         )
         fsm.act("LV_END",
-            If(phdr_xfr_done,
-                w_byte_data.eq(packet_formatter.data_o),
-                w_byte_data_en.eq(1),
-                NextState("LV_END"),
-            ),
-            If(~self.fv_i & c2d_ready,
+            If(~self.fv_i & dphy_ready,
                 hs_req.eq(1),
                 NextState("FV_END"),
             ).Elif(lv_start,
@@ -239,16 +272,12 @@ class CMOS2DPHY(Module):
         )
 
         self.comb += [
-            fifo.reset_sys.eq(~self.fv_i),
-            fifo.reset_byte.eq(~self.fv_i),
-            txfr_req.eq(c2d_ready & (fv_start | fv_end | lv_start | hs_req)),
-            byte_data_en.eq(self.fv_i & self.lv_i),
-        ]
+            txfr_req.eq(dphy_ready & (fv_start_d | fv_start | fv_end | lv_start | hs_req)),
+            byte_data_en.eq(fv_d & lv_d),
 
-        self.sync += [
             If(byte_data_en & fifo.writable,
                 fifo.we.eq(1),
-                fifo.din.eq(Cat(self.pix_data0_i, self.pix_data1_i)),
+                fifo.din.eq(pixdata_d),
             ).Else(
                 fifo.we.eq(0),
                 fifo.din.eq(0),
@@ -262,9 +291,10 @@ class CMOS2DPHY(Module):
             phdr_xfr_done_d[1].eq(phdr_xfr_done_d[0]),
         ]
 
+        # Connect Pixel to D-PHY and Packet Formatter
         self.comb += [
             packet_formatter.byte_data_i.eq(fifo.dout),
-            packet_formatter.vc_i.eq(0),
+            packet_formatter.vc_i.eq(self.vc_i),
             packet_formatter.wc_i.eq(wc),
             packet_formatter.dt_i.eq(dt),
             packet_formatter.sp_en_i.eq(sp_en),
@@ -273,27 +303,19 @@ class CMOS2DPHY(Module):
             ld_pyld.eq(packet_formatter.ld_pyld_o),
         ]
 
-        self.specials += Instance("byte2dphy_instance",
-            i_reset_n_i             = ~ResetSignal(),
-            i_ref_clk_i             = ClockSignal(),
-            i_usrstdby_i            = ResetSignal(),
-            i_pd_dphy_i             = 0,
-            i_byte_or_pkt_data_i    = w_byte_data,
-            i_byte_or_pkt_data_en_i = w_byte_data_en,
-            o_ready_o               = dphy_ready,
-            i_clk_hs_en_i           = txfr_req,
-            i_d_hs_en_i             = txfr_req,
-            o_tinit_done_o          = self.tinit_done_o,
-            o_d_hs_rdy_o            = d_hs_rdy,
-            o_byte_clk_o            = ClockSignal("byte"),
-            o_c2d_ready_o           = c2d_ready,
-            o_clk_p_io              = mipi_dphy_clk_p_io,
-            o_clk_n_io              = mipi_dphy_clk_n_io,
-            o_d_p_io                = mipi_dphy_data_p,
-            o_d_n_io                = mipi_dphy_data_n,
-            synthesis_directive     = "loc=\"DPHY%s\"" % dphy_loc,
-        )
-        # fmt: on
+        # Connect Pixel to D-PHY and TX D-PHY
+        self.comb += [
+            tx_dphy.byte_or_pkt_data_i.eq(w_byte_data),
+            tx_dphy.byte_or_pkt_data_en_i.eq(w_byte_data_en),
+            tx_dphy.d_hs_en_i.eq(txfr_req),
+            mipi_dphy_clk_p_io.eq(tx_dphy.clk_p_io),
+            mipi_dphy_clk_n_io.eq(tx_dphy.clk_n_io),
+            mipi_dphy_data_p.eq(tx_dphy.data_p_io),
+            mipi_dphy_data_n.eq(tx_dphy.data_n_io),
+            d_hs_rdy.eq(txgo.d_hs_rdy_o),
+            dphy_ready.eq(txgo.dphy_ready_o),
+            self.tinit_done_o.eq(txgo.tinit_done_o)
+        ]
 
 
 if __name__ == "__main__":
@@ -305,5 +327,5 @@ if __name__ == "__main__":
         "mipi_d1_n_o": Signal(name="mipi_dphy_d1_n_o"),
         "mipi_d1_p_o": Signal(name="mipi_dphy_d1_p_o"),
     }
-    cmos2dphy = CMOS2DPHY(mipi_dphy_ios, four_lanes=False, dphy_loc=0)
+    cmos2dphy = CMOS2DPHY(mipi_dphy_ios, four_lanes=False, sim=True)
     print(convert(cmos2dphy, cmos2dphy.ios, name="cmos2dphy"))
