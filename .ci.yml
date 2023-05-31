@@ -1,0 +1,78 @@
+stages:
+  - test
+  - build
+
+variables:
+    GIT_STRATEGY: clone
+    GIT_SUBMODULE_STRATEGY: recursive
+    SCALENODE_CPU: 4
+    SCALENODE_RAM: 8192
+    SCALENODE_DISK: 15
+
+image: debian:bullseye
+
+before_script:
+  - apt-get -y update
+  - apt-get -y upgrade
+
+  # Install dependencies
+  - apt-get -fy install python python3 python3-pip git build-essential make curl flex bison
+  - pip3 install -r requirements.txt
+
+test:
+  stage: test
+  tags: ["ace-x86_64"]
+  script:
+    # Install dependencies
+    - apt-get install -y autoconf gperf
+
+    # Install icarus verilog
+    - git clone https://github.com/steveicarus/iverilog.git && cd iverilog
+    - sh autoconf.sh
+    - ./configure
+    - make
+    - make install
+    - cd ..
+
+    # Run tests
+    - cd tests && pytest
+
+bitstream:
+  stage: build
+  tags: ["ace-x86_64"]
+  script:
+    # Install dependencies
+    - apt-get -fy install clang libreadline-dev gawk tcl-dev libffi-dev git graphviz xdot pkg-config libboost-all-dev cmake libeigen3-dev zlib1g-dev
+
+    # Install Rust
+    - curl https://sh.rustup.rs -sSf | sh -s -- -y
+    - source "$HOME/.cargo/env"
+
+    # Install Yosys
+    - git clone https://github.com/YosysHQ/yosys.git && cd yosys
+    - make config-clang
+    - make -j $(nproc)
+    - make install
+    - cd ..
+
+    # Install prjoxide
+    - git clone --recursive https://github.com/gatecat/prjoxide && cd prjoxide
+    - cd libprjoxide
+    - cargo install --path prjoxide
+    - cd ../..
+
+    # Install nextpnr-nexus
+    - git clone --recursive --single-branch -b lifcl-40-dphy https://github.com/antmicro/nextpnr.git && cd nextpnr
+    - cmake -DARCH=nexus -DOXIDE_INSTALL_PREFIX=$HOME/.cargo .
+    - make -j $(nproc)
+    - cp nextpnr-nexus $HOME/.cargo/bin/
+    - export PATH=$PATH:$HOME/.cargo/bin
+    - cd ..
+
+    # Build a bistream
+    - make all
+  artifacts:
+    name: bitstream-build
+    expire_in: 2 weeks
+    paths:
+      - build/
