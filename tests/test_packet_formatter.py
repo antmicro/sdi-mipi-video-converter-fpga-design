@@ -1,0 +1,163 @@
+# Copyright 2023 Antmicro <www.antmicro.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import cocotb
+from common import *
+from common import bbb_line, bbb_line_crc
+from common import reset_module
+from cocotb.clock import Clock
+from cocotb.triggers import Timer, FallingEdge, RisingEdge
+from cocotb.regression import TestFactory
+
+HS_INIT_SEQ = 0xb8b8
+DT_FRAME_START = 0
+DT_FRAME_END = 1
+
+
+# Helper Python functions -----------------------------------------------------
+def int2list(val, width=24):
+    bin_str = ('{0:b}'.format(val))
+    val = [int(x) for x in bin_str]
+
+    for _ in range(width - len(val)):
+        val.insert(0, 0)
+
+    return val
+
+
+def list2int(list_val):
+    val = 0
+    for i, x in enumerate(list_val):
+        val += 2**i if x else 0
+
+    return val
+
+
+def gen_ecc(value):
+    ECC_MASK = [
+        [1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1],
+        [1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1],
+        [0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1],
+        [1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0],
+        [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+        [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ]
+    val = int2list(value)
+    ecc = []
+    for i, mask in enumerate(ECC_MASK):
+        for j, x in enumerate(mask):
+            if len(ecc) == i and x:
+                ecc.append(val[j])
+            elif x:
+                ecc[i] = ecc[i] ^ val[j]
+    ecc = ecc[0] | (ecc[1] << 1) | (ecc[2] << 2) | (ecc[3] << 3) | (ecc[4] << 4) | (ecc[5] << 5)
+    return ecc
+
+
+# Helper simulation functions -------------------------------------------------
+async def check_packet_header(dut, dt, wc, vc=0):
+    clk = dut.sys_clk
+
+    # Test virtual channel 0 only
+    dut.vc_i.value = vc
+    # Short packets are always 0 words
+    dut.wc_i.value = wc
+    # Data type should be set for a whole time
+    dut.dt_i.value = dt
+
+    # Data should be set to init sequence at the next rising edge
+    await RisingEdge(clk)
+    dut.sp_en_i.value = 0
+    dut.lp_en_i.value = 0
+    assert dut.data_o.value == HS_INIT_SEQ, "Initialization sequence error"
+
+    # 1st word after init is dt and wc
+    await RisingEdge(clk)
+    header1 = (((wc & 0xff) << 8) | (dt & 0xff)) & 0xffff
+    assert dut.data_o.value == header1, "Packet header error (dt)"
+
+    # 2nd word after init is wc and ecc
+    await RisingEdge(clk)
+    ecc = gen_ecc((wc << 8) | dt)
+    header2 = ((ecc << 8) | ((wc >> 8) & 0xff)) & 0xffff
+    assert dut.data_o.value == header2, "Packet header error (ecc)"
+
+
+async def check_eot(dut, last_word):
+    clk = dut.sys_clk
+    await RisingEdge(clk)
+
+    trail = []
+    trail.append([(1 if ~last_word[7] else 0) for _ in range(8)])
+    trail.append([(1 if ~last_word[-1] else 0) for _ in range(8)])
+    trail = list2int(trail[0]) + (list2int(trail[1]) << 8)
+
+    assert dut.data_o.value == trail, "Wrong HS-Trail value"
+
+
+# Tests -----------------------------------------------------------------------
+async def test_short_packet(dut, dt, clock_period):
+    clk = dut.sys_clk
+    dut_clk = Clock(clk, clock_period, "ps")
+    cocotb.start_soon(dut_clk.start())
+    await reset_module([dut.sys_rst], clk)
+
+    # Request short packet transfer
+    dut.sp_en_i.value = 1
+
+    ecc = gen_ecc(dt)
+    last_word = int2list(ecc, 16)
+    await check_packet_header(dut, dt, 0)
+    await check_eot(dut, last_word)
+
+    # Inititate init sequence
+    await RisingEdge(clk)
+
+
+async def test_long_packet(dut, dt, clock_period, line_test_case):
+    clk = dut.sys_clk
+    dut_clk = Clock(clk, clock_period, "ps")
+    cocotb.start_soon(dut_clk.start())
+    await reset_module([dut.sys_rst], clk)
+    wc = 3840
+
+    if line_test_case == "bbb_1":
+        test_case = (bbb_line, bbb_line_crc)
+    data = test_case[0]
+    crc = test_case[1]
+
+    # Request long packet transfer
+    dut.lp_en_i.value = 1
+
+    await check_packet_header(dut, dt, wc)
+    for i in range(wc // 2):
+        dut.byte_data_i.value = data[i]
+        await RisingEdge(clk)
+
+    await RisingEdge(clk)
+    assert dut.data_o.value == crc, "Packet footer error (CRC)"
+
+    await check_eot(dut, int2list(crc, 16))
+
+
+tf_sp = TestFactory(test_function=test_short_packet)
+tf_sp.add_option(name="clock_period", optionlist=[BYTE_CLK_74_25MHZ, BYTE_CLK_148_5MHZ])
+tf_sp.add_option(name="dt", optionlist=[0, 1])
+tf_sp.generate_tests()
+
+tf_lp = TestFactory(test_function=test_long_packet)
+tf_lp.add_option(name="clock_period", optionlist=[BYTE_CLK_74_25MHZ, BYTE_CLK_148_5MHZ])
+tf_lp.add_option(name="dt", optionlist=[0x1e])
+tf_lp.add_option(name="line_test_case", optionlist=["bbb_1"])
+tf_lp.generate_tests()

@@ -16,3 +16,4 @@ impl*/
 __pycache__
 build
 src/*.v
+tests/sim_build

@@ -31,8 +31,10 @@ ECPPROG?=ecpprog
 ROOT=$(CURDIR)
 PROJ=$(VIDEO_FORMAT)-$(LANES)lanes
 BUILD_DIR=$(ROOT)/build/$(PROJ)
+TEST_DIR=$(ROOT)/tests
 VERILOG_TOP=$(BUILD_DIR)/top.v
 PDC=$(ROOT)/constraints/video_converter.pdc
+TEST_MODULES = crc16 packet_formatter mipi_dphy cmos2dphy
 
 ifeq ($(PATTERN_GEN),1)
 PATTERN_GEN=--pattern-gen
@@ -66,11 +68,16 @@ prog: $(PROJ).bit ## Generate a bitstream and load it to the board's SRAM
 prog-flash: $(PROJ).bit ## Generate a bitstream and load it to the board's flash
 	$(ECPPROG) $(PROJ).bit
 
+tests: ## Run all existing tests in cocotb + iverilog flow
+	$(foreach TEST, $(TEST_MODULES), \
+		TOP=$(TEST) $(MAKE) -C $(TEST_DIR) test; \
+	)
+
 clean: ## Remove all generated files for specific configuration
 	rm -rf $(BUILD_DIR)
 
 .SECONDARY:
-.PHONY: help verilog prog prog-flash clean
+.PHONY: tests help verilog prog prog-flash clean
 
 .DEFAULT_GOAL := help
 HELP_COLUMN_SPAN = 15

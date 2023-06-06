@@ -101,10 +101,13 @@ class TXGlobalOperations(Module):
         tinit_counter = Signal(14)
 
         self.sync += [
-            If(~self.tinit_done_o & (tinit_counter < timings["TINIT_VALUE"]),
+            If(~self.tinit_done_o,
                 tinit_counter.eq(tinit_counter + 1),
-            ).Else(
+            ),
+            If(tinit_counter > timings["TINIT_VALUE"],
                 self.tinit_done_o.eq(1),
+            ).Else(
+                self.tinit_done_o.eq(0),
             ),
         ]
 
@@ -224,6 +227,8 @@ class TXDPHY(Module):
     four_lanes : bool
         If true, modules will be generated in 4 lanes variant, otherwise it will
         be generated for 2 lanes.
+    sim : bool
+        Omit generating D-PHY module if simulation mode is True.
 
     Attributes
     ----------
@@ -247,13 +252,14 @@ class TXDPHY(Module):
         Internal D-PHY PLL lock status.
 
     """
-    def __init__(self, video_format="1080p30", four_lanes=False):
+    def __init__(self, video_format="1080p30", four_lanes=False, sim=False):
         assert four_lanes in [True, False]
+        assert sim in [True, False]
         LANES = 4 if four_lanes else 2
         LANES_STR = "FOUR_LANES" if four_lanes else "TWO_LANES"
         timings = dphy_timings[video_format]
 
-        self.clock_domains.cd_byte = ClockDomain("byte", reset_less=True)
+        self.clock_domains.cd_byte = ClockDomain("byte")
 
         self.submodules.txgo = txgo = ClockDomainsRenamer("byte")(
             TXGlobalOperations(timings, four_lanes))
@@ -282,6 +288,8 @@ class TXDPHY(Module):
         self.hs_tx_en_i = Signal().like(txgo.hs_tx_en_o)
 
         self.ios = {
+            self.cd_byte.clk,
+            self.cd_byte.rst,
             self.pll_lock_o,
             self.byte_or_pkt_data_i,
             self.byte_or_pkt_data_en_i,
@@ -470,5 +478,5 @@ class TXDPHY(Module):
             )
 
 if __name__ == "__main__":
-    txdphy = TXDPHY("1080p30", four_lanes=False)
+    txdphy = TXDPHY("1080p30", four_lanes=False, sim=True)
     print(convert(txdphy, txdphy.ios, name="mipi_dphy"))
