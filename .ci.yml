@@ -34,8 +34,11 @@ test:
     - make install
     - cd ..
 
+    # Install cocotb
+    - pip install cocotb
+
     # Run tests
-    - cd tests && pytest
+    - make tests
 
 bitstream:
   stage: build
