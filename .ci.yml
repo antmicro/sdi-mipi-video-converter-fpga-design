@@ -16,36 +16,41 @@ before_script:
   - apt-get -y upgrade
 
   # Install dependencies
-  - apt-get -fy install python python3 python3-pip git build-essential make curl flex bison
+  - apt-get -fy install python python3 python3-pip git build-essential make curl flex bison zlib1g-dev
   - pip3 install -r requirements.txt
 
 test:
+  variables:
+    SCALENODE_RAM: 16384
   stage: test
   tags: ["ace-x86_64"]
   script:
     # Install dependencies
-    - apt-get install -y autoconf gperf
+    - apt-get install -y autoconf gperf perl autoconf ccache libgoogle-perftools-dev numactl perl-doc libfl2 libfl-dev help2man
 
     # Install icarus verilog
-    - git clone https://github.com/steveicarus/iverilog.git && cd iverilog
-    - sh autoconf.sh
+    - git clone https://github.com/verilator/verilator && cd verilator
+    - git checkout master
+    - autoconf
     - ./configure
-    - make
+    - make -j $(nproc)
     - make install
     - cd ..
 
-    # Install cocotb
-    - pip install cocotb
-
     # Run tests
-    - make tests
+    - TRACE=1 make tests
+  artifacts:
+    name: tests
+    expire_in: 2 weeks
+    paths:
+      - tests/build/
 
 bitstream:
   stage: build
   tags: ["ace-x86_64"]
   script:
     # Install dependencies
-    - apt-get -fy install clang libreadline-dev gawk tcl-dev libffi-dev git graphviz xdot pkg-config libboost-all-dev cmake libeigen3-dev zlib1g-dev
+    - apt-get -fy install clang libreadline-dev gawk tcl-dev libffi-dev git graphviz xdot pkg-config libboost-all-dev cmake libeigen3-dev
 
     # Install Rust
     - curl https://sh.rustup.rs -sSf | sh -s -- -y

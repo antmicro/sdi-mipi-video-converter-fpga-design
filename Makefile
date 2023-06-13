@@ -70,7 +70,7 @@ prog-flash: $(PROJ).bit ## Generate a bitstream and load it to the board's flash
 
 tests: ## Run all existing tests in cocotb + iverilog flow
 	$(foreach TEST, $(TEST_MODULES), \
-		TOP=$(TEST) $(MAKE) -C $(TEST_DIR) test; \
+		TRACE=$(TRACE) TOP=$(TEST) $(MAKE) -C $(TEST_DIR) test; \
 	)
 
 clean: ## Remove all generated files for specific configuration
@@ -86,7 +86,14 @@ help: ## Show this help message
 	@echo List of available targets:
 	@grep -hE '^[^#[:blank:]]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf $(HELP_FORMAT_STRING), $$1, $$2}'
 	@echo
+	@echo
 	@echo List of available optional parameters:
+	@echo
+	@echo Build:
+	@echo -e "\033[36mYOSYS\033[0m           Path to yosys binary (default: $(YOSYS))"
+	@echo -e "\033[36mNEXTPNR\033[0m         Path to nextpnr binary (default: $(NEXTPNR))"
+	@echo -e "\033[36mPRJOXIDE\033[0m        Path to prjoxide binary (default: $(PRJOXIDE))"
+	@echo -e "\033[36mECPPROG\033[0m         Path to ecpprog binary (default: $(ECPPROG))"
 	@echo -e "\033[36mYOSYS_ARGS\033[0m      Additional arguments for Yosys (default: $(YOSYS_ARGS))"
 	@echo -e "\033[36mSYNTH_ARGS\033[0m      Additional arguments for Yosys 'synth_nexus' command (default: $(SYNTH_ARGS))"
 	@echo -e "\033[36mNEXTPNR_ARGS\033[0m    Additional arguments for Nextpnr (default: $(NEXTPNR_ARGS))"
@@ -94,7 +101,6 @@ help: ## Show this help message
 	@echo -e "\033[36mSIM\033[0m             Set to '1' if you want to generate verilog sources ready for simulation using Modelsim Lattice FPGA Edition (default: None)"
 	@echo -e "\033[36mVIDEO_FORMAT\033[0m    Video format, one of 720p60, 1080p30, 1080p60 (default: $(VIDEO_FORMAT))"
 	@echo -e "\033[36mLANES\033[0m           D-PHY Lanes, must be either 2 or 4 (default: $(LANES))"
-	@echo -e "\033[36mYOSYS\033[0m           Path to yosys binary (default: $(YOSYS))"
-	@echo -e "\033[36mNEXTPNR\033[0m         Path to nextpnr binary (default: $(NEXTPNR))"
-	@echo -e "\033[36mPRJOXIDE\033[0m        Path to prjoxide binary (default: $(PRJOXIDE))"
-	@echo -e "\033[36mECPPROG\033[0m         Path to ecpprog binary (default: $(ECPPROG))"
+	@echo
+	@echo Tests:
+	@echo -e "\033[36mTRACE\033[0m           Set to '1' if you want to generate simulation waveforms (default: None)"

@@ -1,12 +1,18 @@
 # Makefile
+ifeq ($(TRACE), 1)
+TRACE_ARGS="--trace --trace-structs"
+IGNORE_DUMP_LOGS=| grep -v "^%Warning: previous dump at t=[0-9]*, requesting t=[0-9]*, dump call ignored$$"
+endif
 
 # defaults
-SIM ?= icarus
+SIM ?= verilator
 TOPLEVEL_LANG ?= verilog
 TOP ?= top
 BUILD_DIR = $(CURDIR)/build/$(TOP)
 SRC_DIR ?= $(CURDIR)/../src
 VERILOG_SOURCES += $(BUILD_DIR)/$(TOP).v
+EXTRA_COMPILE_ARGS="--timing -Wno-COMBDLY -Wno-WIDTH -Wno-INITIALDLY -Wno-STMTDLY"
+EXTRA_SIM_ARGS+=$(TRACE_ARGS)
 
 # String to enable simulation waveforms
 define COCOTB_SIM_WAVE_DUMP
@@ -32,5 +38,5 @@ export COCOTB_SIM_WAVE_DUMP
 test:
 	mkdir -p $(BUILD_DIR)
 	pushd $(BUILD_DIR) && python3 $(SRC_DIR)/$(TOP).py > $(TOP).v && popd
-	sed -ie '/^);/a $(COCOTB_SIM_WAVE_DUMP)\n' $(BUILD_DIR)/$(TOP).v
-	$(MAKE) sim
+	sed -i '/^);/a $(COCOTB_SIM_WAVE_DUMP)\n' $(BUILD_DIR)/$(TOP).v
+	COMPILE_ARGS+=$(EXTRA_COMPILE_ARGS) EXTRA_ARGS+=$(EXTRA_SIM_ARGS) $(MAKE) sim $(IGNORE_DUMP_LOGS)
