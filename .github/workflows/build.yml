@@ -1,0 +1,67 @@
+name: Bitstream build
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        placer-heap-timingweight: [30, 35, 40]
+    steps:
+      - name: Setup repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y upgrade
+          sudo apt-get -fy install git build-essential make curl flex bison zlib1g-dev clang libreadline-dev gawk tcl-dev libffi-dev git graphviz xdot pkg-config libboost-all-dev cmake libeigen3-dev
+          pip3 install -r requirements.txt
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+
+      - name: Add ccache to PATH
+        run: |
+          echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+
+      - name: Install Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source "$HOME/.cargo/env"
+
+      - name: Install Yosys
+        run: |
+          git clone https://github.com/YosysHQ/yosys.git && cd yosys
+          make config-clang
+          make -j $(nproc)
+          sudo make install
+
+      - name: Install prjoxide
+        run: |
+          git clone --recursive https://github.com/gatecat/prjoxide && cd prjoxide
+          cd libprjoxide
+          cargo install --path prjoxide
+
+      - name: Install nextpnr-nexus
+        run: |
+          git clone --recursive --single-branch -b lifcl-40-dphy https://github.com/antmicro/nextpnr.git && cd nextpnr
+          cmake -DARCH=nexus -DOXIDE_INSTALL_PREFIX=$HOME/.cargo .
+          make -j $(nproc)
+          sudo cp nextpnr-nexus $HOME/.cargo/bin/
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Build a bitstream
+        run: NEXTPNR_ARGS="--placer-heap-timingweight ${{ matrix.placer-heap-timingweight }}" make all
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-output-placer-heap-timingweight-${{ matrix.placer-heap-timingweight }}
+          path: build/

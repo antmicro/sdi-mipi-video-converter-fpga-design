@@ -1,0 +1,47 @@
+name: Test in Verilator
+on: [push, pull_request]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y upgrade
+          sudo apt-get -fy install git build-essential make curl flex bison zlib1g-dev autoconf gperf perl autoconf ccache numactl perl-doc libfl2 libfl-dev help2man
+          pip3 install -r requirements.txt
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+
+      - name: Add ccache to PATH
+        run: |
+          echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+
+      - name: Install Verilator
+        run: |
+          git clone https://github.com/verilator/verilator && cd verilator
+          git checkout master
+          autoconf
+          ./configure
+          make -j $(nproc)
+          sudo make install
+
+      - name: Run tests
+        run: TRACE=1 make tests
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: tests-results
+          path: tests/build/
