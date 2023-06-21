@@ -13,8 +13,8 @@
 # limitations under the License.
 
 
-dphy_timings = {
-    "1080p30": {
+clock_timings = {
+    "74_25MHz": {
         "CN": "0b10000",# 3
         "CM": "0b10100000", # 96
         "CO": "0b010", # 4
@@ -23,13 +23,30 @@ dphy_timings = {
         "T_DATPREP": 4,
         "T_DAT_HSZERO": 10,
         "T_DATTRAIL": 13,
-        "T_DATEXIT": 9,
         "T_CLKPREP": 3,
         "T_CLK_HSZERO": 20,
-        "T_CLKPRE": 1,
         "T_CLKPOST": 10,
         "T_CLKTRAIL": 6,
+    },
+    "148_5MHz": {
+        "CN": "0b11100",# 5
+        "CM": "0b10010000", # 80
+        "CO": "0b001", # 2
+        "TINIT_VALUE": 15000,
+        "T_LPX": 8,
+        "T_DATPREP": 7,
+        "T_DAT_HSZERO": 18,
+        "T_DATTRAIL": 19,
+        "T_CLKPREP": 6,
+        "T_CLK_HSZERO": 39,
+        "T_CLKPOST": 15,
+        "T_CLKTRAIL": 10,
     }
+}
+
+dphy_timings = {
+    "1080p30" : clock_timings["74_25MHz"],
+    "1080p60" : clock_timings["148_5MHz"],
 }
 
 

@@ -6,7 +6,8 @@ module iver_tb;
 	parameter integer V_ACTIVE = 1080;
 	parameter integer FRAMES = 10;
 
-	integer CLK_PERIOD = 13468; // 1080p30 - 74.25 MHz
+	// integer CLK_PERIOD = 13468; // 74.25 MHz
+	integer CLK_PERIOD = 6734; // 148.5 MHz
 	integer i;
 	integer k;
 	integer j;
@@ -23,7 +24,7 @@ module iver_tb;
 		$dumpvars(0, iver_tb);
 		#(CLK_PERIOD * 10); locked = 1;
 		// Wait for D-PHY tinit
-		#(CLK_PERIOD * 16000);
+		#(CLK_PERIOD * 16000 * (13468 / CLK_PERIOD));
 
 		for (i = 0; i < FRAMES; i = i + 1) begin
 			$readmemh("tests/bbb.txt", image);
@@ -37,7 +38,7 @@ module iver_tb;
 				end
 				lv = 0;
 				data = 0;
-				#(CLK_PERIOD * 280);
+				#(CLK_PERIOD * 280 * (13468 / CLK_PERIOD));
 			end
 		end
 		#1 $finish;
@@ -57,7 +58,7 @@ module iver_tb;
 		.deserializer_pll_lock_o(locked),
 		.deserializer_data_2to9_o(data[7:0]),
 		.deserializer_data_12to19_o(data[15:8]),
-		.deserializer_vsync_o(~fv),
-		.deserializer_hsync_o(~lv)
+		.deserializer_vblank_o(~fv),
+		.deserializer_hblank_o(~lv)
 	);
 endmodule

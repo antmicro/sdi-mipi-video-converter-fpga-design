@@ -110,7 +110,7 @@ class Top(Module):
         ]
 
         # Logic - Generate timings and MIPI D-PHY
-        self.submodules.cmos2dphy = CMOS2DPHY(mipi_dphy_ios, four_lanes)
+        self.submodules.cmos2dphy = CMOS2DPHY(mipi_dphy_ios, video_format, four_lanes)
         self.submodules.sdi2mipi = SDI2MIPI(video_format, four_lanes, pattern_gen)
 
         if pattern_gen:
@@ -134,7 +134,7 @@ class Top(Module):
         if sim:
             self.comb += [
                 self.cmos2dphy.fv_i.eq(~des_vsync),
-                self.cmos2dphy.lv_i.eq(~des_hsync),
+                self.cmos2dphy.lv_i.eq(~des_hsync | ~des_vsync),
             ]
         else:
             self.comb += [
@@ -173,10 +173,12 @@ class Top(Module):
                 If((counter > COUNTER_100us) & (~des_reset_n),
                     des_reset_n.eq(1),
                 ),
-                If((counter > COUNTER_1s) & (~reset_n),
-                    reset_n.eq(1),
-                    counter.eq(0),
+                If((counter > COUNTER_1s),
                     cdone_led_o.eq(~cdone_led_o),
+                    counter.eq(0),
+                    If(~reset_n,
+                        reset_n.eq(1),
+                    ),
                 ),
             ]
 

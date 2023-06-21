@@ -1,6 +1,6 @@
 ldc_set_location -site {L5} [get_ports deserializer_pix_clk_o]
-ldc_set_location -site {N2} [get_ports deserializer_hsync_o]
-ldc_set_location -site {M3} [get_ports deserializer_vsync_o]
+ldc_set_location -site {N2} [get_ports deserializer_hblank_o]
+ldc_set_location -site {M3} [get_ports deserializer_vblank_o]
 ldc_set_location -site {N1} [get_ports deserializer_pll_lock_o]
 ldc_set_location -site {J6} [get_ports {deserializer_data_12to19_o[0]}]
 ldc_set_location -site {K5} [get_ports {deserializer_data_12to19_o[1]}]
@@ -43,9 +43,9 @@ ldc_set_location -site {DPHY1} [get_ports mipi_dphy_d1_n_o]
 
 create_clock -name {hfc_clk} -period 4.444 [get_nets hfc_clk]
 
-# 1080p30 - 74.25 MHz
+# Pixel clock - 74.25 MHz
 create_clock -name {sys_clk} -period 13.468 [get_ports deserializer_pix_clk_o]
 create_clock -name {sys_clk} -period 13.468 [get_nets sys_clk]
 create_clock -name {byte_clk} -period 13.468 [get_nets byte_clk]
-create_clock -name {mipi_dphy_clk_p_o}  -period 3.367    [get_ports mipi_dphy_clk_p_o]
-create_clock -name {mipi_dphy_clk_n_o}  -period 3.367    [get_ports mipi_dphy_clk_n_o]
+create_clock -name {mipi_dphy_clk_p_o} -period 3.367 [get_ports mipi_dphy_clk_p_o]
+create_clock -name {mipi_dphy_clk_n_o} -period 3.367 [get_ports mipi_dphy_clk_n_o]

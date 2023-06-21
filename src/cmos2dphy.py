@@ -24,7 +24,7 @@ __all__ = ["CMOS2DPHY"]
 
 
 class CMOS2DPHY(Module):
-    def __init__(self, mipi_dphy_ios, four_lanes=False, sim=False):
+    def __init__(self, mipi_dphy_ios, video_format="1080p30", four_lanes=False, sim=False):
         assert four_lanes in [True, False]
         assert sim in [True, False]
 
@@ -115,12 +115,11 @@ class CMOS2DPHY(Module):
             ClockDomainsRenamer("byte")(PacketFormatter())
 
         # Hardened TX D-PHY with TX Global Operations
-        self.submodules.tx_dphy = tx_dphy = TXDPHY(sim=sim)
+        self.submodules.tx_dphy = tx_dphy = TXDPHY(video_format=video_format, sim=sim)
         txgo = tx_dphy.txgo
 
         # Internal signals
         pixdata = Cat(self.pix_data0_i, self.pix_data1_i)
-        pixdata_d = Signal().like(pixdata)
 
         fv_d = Signal()
         lv_d = Signal()
@@ -164,7 +163,6 @@ class CMOS2DPHY(Module):
                 lv_end.eq(0)
             ),
 
-            pixdata_d.eq(pixdata),
             fv_start_d.eq(fv_start),
         ]
 
@@ -273,11 +271,11 @@ class CMOS2DPHY(Module):
 
         self.comb += [
             txfr_req.eq(dphy_ready & (fv_start_d | fv_start | fv_end | lv_start | hs_req)),
-            byte_data_en.eq(fv_d & lv_d),
+            byte_data_en.eq(self.fv_i & self.lv_i),
 
             If(byte_data_en & fifo.writable,
                 fifo.we.eq(1),
-                fifo.din.eq(pixdata_d),
+                fifo.din.eq(pixdata),
             ).Else(
                 fifo.we.eq(0),
                 fifo.din.eq(0),
