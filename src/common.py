@@ -45,16 +45,9 @@ clock_timings = {
 }
 
 dphy_timings = {
+    "720p60"  : clock_timings["74_25MHz"],
     "1080p25" : clock_timings["74_25MHz"],
     "1080p30" : clock_timings["74_25MHz"],
     "1080p50" : clock_timings["148_5MHz"],
     "1080p60" : clock_timings["148_5MHz"],
 }
-
-
-class UnsupportedVideoFormatException(Exception):
-    def __init__(self, supported_video_formats):
-        msg = "Unsupported video format. Available options are: {"
-        msg += ", ".join(supported_video_formats)
-        msg += "}"
-        super().__init__(msg)

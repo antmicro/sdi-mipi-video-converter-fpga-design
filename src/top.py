@@ -25,6 +25,11 @@ class Top(Module):
     def __init__(
         self, video_format="1080p60", four_lanes=False, sim=False, pattern_gen=False
     ):
+        if video_format == "720p60":
+            WC = 2560
+        else:
+            WC = 3840
+
         self.clock_domains.cd_sys = ClockDomain("sys")
         self.clock_domains.cd_hfc = ClockDomain("hfc", reset_less=True)
 
@@ -137,7 +142,7 @@ class Top(Module):
         self.comb += [
             self.cmos2dphy.vc_i.eq(0),    # Virtual channel 0
             self.cmos2dphy.dt_i.eq(0x1e), # YUV422 8-bit
-            self.cmos2dphy.wc_i.eq(3840), # 1920 pixels, 16-bit each
+            self.cmos2dphy.wc_i.eq(WC),   # pixels * 2, 16-bit each
             user_led_o.eq(self.cmos2dphy.tx_dphy.txgo.tinit_done_o),
         ]
 
