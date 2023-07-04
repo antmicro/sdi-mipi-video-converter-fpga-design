@@ -40,7 +40,7 @@ BUILD_DIR=$(ROOT)/build/$(PROJ)
 TEST_DIR=$(ROOT)/tests
 VERILOG_TOP=$(BUILD_DIR)/top.v
 PDC=$(ROOT)/constraints/video_converter_$(CLK_FREQ).pdc
-TEST_MODULES = crc16 packet_formatter mipi_dphy cmos2dphy
+TEST_MODULES = pattern_gen crc16 packet_formatter mipi_dphy cmos2dphy
 
 ifeq ($(PATTERN_GEN),1)
 PATTERN_GEN=--pattern-gen

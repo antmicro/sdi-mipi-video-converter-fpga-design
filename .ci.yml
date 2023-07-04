@@ -38,7 +38,8 @@ test:
     - cd ..
 
     # Run tests
-    - TRACE=1 make tests
+    - TRACE=1 make tests | tee build/log.txt
+    - ! cat $(find . -name "results.xml") | grep -cq "<failure />"
   artifacts:
     name: tests
     expire_in: 2 weeks
@@ -78,7 +79,7 @@ bitstream:
     - cd ..
 
     # Build a bistream
-    - make all
+    - VIDEO_FORMAT=1080p30 make all
   artifacts:
     name: bitstream-build
     expire_in: 2 weeks
