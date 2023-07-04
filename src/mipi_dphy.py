@@ -252,7 +252,7 @@ class TXDPHY(Module):
         Internal D-PHY PLL lock status.
 
     """
-    def __init__(self, video_format="1080p30", four_lanes=False, sim=False):
+    def __init__(self, video_format="1080p60", four_lanes=False, sim=False):
         assert four_lanes in [True, False]
         assert sim in [True, False]
         LANES = 4 if four_lanes else 2
@@ -478,5 +478,5 @@ class TXDPHY(Module):
             )
 
 if __name__ == "__main__":
-    txdphy = TXDPHY("1080p30", four_lanes=False, sim=True)
+    txdphy = TXDPHY("1080p60", four_lanes=False, sim=True)
     print(convert(txdphy, txdphy.ios, name="mipi_dphy"))

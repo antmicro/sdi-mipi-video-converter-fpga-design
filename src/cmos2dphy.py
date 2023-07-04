@@ -24,7 +24,7 @@ __all__ = ["CMOS2DPHY"]
 
 
 class CMOS2DPHY(Module):
-    def __init__(self, mipi_dphy_ios, video_format="1080p30", four_lanes=False, sim=False):
+    def __init__(self, mipi_dphy_ios, video_format="1080p60", four_lanes=False, sim=False):
         assert four_lanes in [True, False]
         assert sim in [True, False]
 

@@ -18,12 +18,12 @@ from migen import *
 from migen.fhdl.verilog import convert
 from cmos2dphy import CMOS2DPHY
 
-from sdi2mipi import SDI2MIPI
+from pattern_gen import PatternGenerator
 
 
 class Top(Module):
     def __init__(
-        self, video_format="720p60", four_lanes=False, sim=False, pattern_gen=False
+        self, video_format="1080p60", four_lanes=False, sim=False, pattern_gen=False
     ):
         self.clock_domains.cd_sys = ClockDomain("sys")
         self.clock_domains.cd_hfc = ClockDomain("hfc", reset_less=True)
@@ -45,8 +45,8 @@ class Top(Module):
             "des_data_12to19_o": Signal(8, name="deserializer_data_12to19_o"),
             "des_pix_clk_o": Signal(name="deserializer_pix_clk_o"),
             "des_pll_lock_o": Signal(name="deserializer_pll_lock_o"),
-            "des_vsync_o": Signal(name="deserializer_vsync_o"),
-            "des_hsync_o": Signal(name="deserializer_hsync_o"),
+            "des_vblank_o": Signal(name="deserializer_vblank_o"),
+            "des_hblank_o": Signal(name="deserializer_hblank_o"),
             "des_smpte_bypass_n_i": Signal(name="deserializer_smpte_bypass_n_i"),
             "des_ioproc_en_dis_i": Signal(name="deserializer_ioproc_en_dis_i"),
             "des_jtag_host_i": Signal(name="deserializer_jtag_host_i"),
@@ -78,11 +78,11 @@ class Top(Module):
 
         # Deserializer setup
         self.comb += [
-            deserializer_ios["des_smpte_bypass_n_i"].eq(0),
+            deserializer_ios["des_smpte_bypass_n_i"].eq(1),
             deserializer_ios["des_ioproc_en_dis_i"].eq(1),
             deserializer_ios["des_jtag_host_i"].eq(0),
             deserializer_ios["des_rc_byp_n_i"].eq(0),
-            deserializer_ios["des_tim_861_i"].eq(1),
+            deserializer_ios["des_tim_861_i"].eq(0),
             deserializer_ios["des_sdo_en_dis_i"].eq(1),
             deserializer_ios["des_sw_en_i"].eq(0),
             deserializer_ios["des_dvb_asi_i"].eq(0),
@@ -111,36 +111,28 @@ class Top(Module):
 
         # Logic - Generate timings and MIPI D-PHY
         self.submodules.cmos2dphy = CMOS2DPHY(mipi_dphy_ios, video_format, four_lanes)
-        self.submodules.sdi2mipi = SDI2MIPI(video_format, four_lanes, pattern_gen)
 
         if pattern_gen:
+            self.submodules.pattern_gen = PatternGenerator(video_format)
             self.comb += [
-                self.cmos2dphy.pix_data0_i.eq(self.sdi2mipi.data_o[:8]),
-                self.cmos2dphy.pix_data1_i.eq(self.sdi2mipi.data_o[8:]),
+                self.cmos2dphy.pix_data0_i.eq(self.pattern_gen.data_o[:8]),
+                self.cmos2dphy.pix_data1_i.eq(self.pattern_gen.data_o[8:]),
+                self.cmos2dphy.fv_i.eq(self.pattern_gen.fv_o),
+                self.cmos2dphy.lv_i.eq(self.pattern_gen.lv_o),
             ]
         else:
             des_pix_data_UV = deserializer_ios["des_data_2to9_o"]
             des_pix_data_Y = deserializer_ios["des_data_12to19_o"]
-            des_vsync = deserializer_ios["des_vsync_o"]
-            des_hsync = deserializer_ios["des_hsync_o"]
+            vblank = deserializer_ios["des_vblank_o"]
+            hblank = deserializer_ios["des_hblank_o"]
 
             self.comb += [
                 self.cmos2dphy.pix_data0_i.eq(des_pix_data_UV),
                 self.cmos2dphy.pix_data1_i.eq(des_pix_data_Y),
-                self.sdi2mipi.vsync_i.eq(des_vsync),
-                self.sdi2mipi.hsync_i.eq(des_hsync),
+                self.cmos2dphy.fv_i.eq(~vblank),
+                self.cmos2dphy.lv_i.eq(~hblank & ~vblank),
             ]
 
-        if sim:
-            self.comb += [
-                self.cmos2dphy.fv_i.eq(~des_vsync),
-                self.cmos2dphy.lv_i.eq(~des_hsync | ~des_vsync),
-            ]
-        else:
-            self.comb += [
-                self.cmos2dphy.fv_i.eq(self.sdi2mipi.fv_o),
-                self.cmos2dphy.lv_i.eq(self.sdi2mipi.lv_o),
-            ]
 
         self.comb += [
             self.cmos2dphy.vc_i.eq(0),    # Virtual channel 0

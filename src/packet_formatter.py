@@ -68,7 +68,7 @@ class PacketFormatter(Module):
     data_o : Signal(16)
         Data for generated header, footer or HS Trail state.
     """
-    def __init__(self, video_format="1080p30", four_lanes=False):
+    def __init__(self, video_format="1080p60", four_lanes=False):
         LANES = 4 if four_lanes else 2
 
         timings = dphy_timings[video_format]
