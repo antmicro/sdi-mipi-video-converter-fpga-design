@@ -116,8 +116,8 @@ class TXGlobalOperations(Module):
             NextValue(self.d_hs_rdy_o, 0),
 
             # Keep Stop State - LP-11
-            NextValue(self.lp_tx_clk_p_o, Replicate(1, LANES)),
-            NextValue(self.lp_tx_clk_n_o, Replicate(1, LANES)),
+            NextValue(self.lp_tx_clk_p_o, 1),
+            NextValue(self.lp_tx_clk_n_o, 1),
             NextValue(self.lp_tx_data_p_o, Replicate(1, LANES)),
             NextValue(self.lp_tx_data_n_o, Replicate(1, LANES)),
 
@@ -127,8 +127,8 @@ class TXGlobalOperations(Module):
             If(self.d_hs_en_i & self.tinit_done_o,
                 NextValue(counter, 0),
                 NextValue(self.dphy_ready_o, 0),
-                NextValue(self.lp_tx_clk_p_o, Replicate(0, LANES)),
-                NextValue(self.lp_tx_clk_n_o, Replicate(1, LANES)),
+                NextValue(self.lp_tx_clk_p_o, 0),
+                NextValue(self.lp_tx_clk_n_o, 1),
                 NextState("TX_CLK_ENABLE"),
             ),
         )
@@ -142,16 +142,16 @@ class TXGlobalOperations(Module):
 
             If(counter <= timings["T_LPX"],
                 # HS Request
-                NextValue(self.lp_tx_clk_p_o, Replicate(0, LANES)),
-                NextValue(self.lp_tx_clk_n_o, Replicate(1, LANES)),
+                NextValue(self.lp_tx_clk_p_o, 0),
+                NextValue(self.lp_tx_clk_n_o, 1),
             ).Elif(counter <= (timings["T_LPX"] + timings["T_CLKPREP"]),
                 # HS Prepare
-                NextValue(self.lp_tx_clk_p_o, Replicate(0, LANES)),
-                NextValue(self.lp_tx_clk_n_o, Replicate(0, LANES)),
+                NextValue(self.lp_tx_clk_p_o, 0),
+                NextValue(self.lp_tx_clk_n_o, 0),
             ).Elif(counter <= (timings["T_LPX"] + timings["T_CLKPREP"] + timings["T_CLK_HSZERO"]),
                 # HS Go
-                NextValue(self.lp_tx_clk_p_o, Replicate(0, LANES)),
-                NextValue(self.lp_tx_clk_n_o, Replicate(1, LANES)),
+                NextValue(self.lp_tx_clk_p_o, 0),
+                NextValue(self.lp_tx_clk_n_o, 1),
             ).Else(
                 NextValue(counter, 0),
                 NextState("TX_DATA_ENABLE"),
@@ -205,13 +205,13 @@ class TXGlobalOperations(Module):
             ).Elif(counter <= (timings["T_CLKPOST"] + timings["T_CLKTRAIL"]),
                 NextValue(self.hs_clk_en_o, 0),
                 NextValue(self.lp_tx_data_en_o, 1),
-                NextValue(self.lp_tx_clk_p_o, Replicate(0, LANES)),
-                NextValue(self.lp_tx_clk_n_o, Replicate(1, LANES)),
+                NextValue(self.lp_tx_clk_p_o, 0),
+                NextValue(self.lp_tx_clk_n_o, 1),
             ).Else(
                 NextValue(self.hs_clk_en_o, 0),
                 NextValue(self.lp_tx_data_en_o, 1),
-                NextValue(self.lp_tx_clk_p_o, Replicate(1, LANES)),
-                NextValue(self.lp_tx_clk_n_o, Replicate(1, LANES)),
+                NextValue(self.lp_tx_clk_p_o, 1),
+                NextValue(self.lp_tx_clk_n_o, 1),
                 NextState("TX_STOP"),
             ),
         )
