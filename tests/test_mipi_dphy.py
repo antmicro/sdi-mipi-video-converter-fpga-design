@@ -74,12 +74,18 @@ async def do_xfr_data(dut):
 async def tx_hs_to_lp(dut):
     await FallingEdge(dut.d_hs_rdy_o)
     assert dut.dphy_ready_o.value == 0
-    assert dut.hs_tx_en_o.value == 1
+    assert dut.hs_tx_en_o.value == 0
     assert dut.hs_clk_en_o.value == 1
-    assert dut.lp_tx_data_en_o.value == 0
+    assert dut.lp_tx_data_en_o.value == 1
+    assert dut.lp_tx_data_p_o.value == 0b11
+    assert dut.lp_tx_data_n_o.value == 0b11
 
     # Wait for HS disable to complete
     await RisingEdge(dut.dphy_ready_o)
+    assert dut.lp_tx_data_p_o.value == 0b11
+    assert dut.lp_tx_data_n_o.value == 0b11
+    assert dut.lp_tx_clk_p_o.value == 1
+    assert dut.lp_tx_clk_n_o.value == 1
 
 
 async def test_mipi_dphy(dut, clock_period):

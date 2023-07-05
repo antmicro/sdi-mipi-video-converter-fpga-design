@@ -38,12 +38,15 @@ test:
     - cd ..
 
     # Run tests
-    - TRACE=1 make tests | tee build/log.txt
-    - ! cat $(find . -name "results.xml") | grep -cq "<failure />"
+    - TRACE=1 make tests | tee log.txt
+    - '! cat $(find . -name "results.xml") | grep -cq "<failure />"'
   artifacts:
+    when: always
     name: tests
     expire_in: 2 weeks
     paths:
+      - log.txt
+      - results.xml
       - tests/build/
 
 bitstream:
@@ -78,7 +81,8 @@ bitstream:
     - export PATH=$PATH:$HOME/.cargo/bin
     - cd ..
 
-    # Build a bistream
+    # Build a bistream, specify video format to avoid false negatives
+    # related to nextpnr issue: https://github.com/YosysHQ/nextpnr/issues/903
     - VIDEO_FORMAT=1080p30 make all
   artifacts:
     name: bitstream-build
