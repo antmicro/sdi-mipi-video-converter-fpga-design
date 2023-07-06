@@ -57,6 +57,7 @@ async def check_short_packet(dut, dt):
 
     await RisingEdge(dut.phdr_xfr_done_o)
 
+
 async def frame_start(dut):
     dut.fv_i.value = 1
     dut.lv_i.value = 0
@@ -111,6 +112,13 @@ async def test_cmos2dphy(dut, clock_period, lines):
 
     # Wait for D-PHY to be ready
     await RisingEdge(dut.tinit_done_o)
+
+    # Omit first few frames due to deserializer timing characteristics
+    for _ in range(6):
+        dut.fv_i.value = 1
+        await ClockCycles(pix_clk, 5)
+        dut.fv_i.value = 0
+        await ClockCycles(pix_clk, 5)
 
     # Initiate frame transfer with a short packet
     await frame_start(dut)

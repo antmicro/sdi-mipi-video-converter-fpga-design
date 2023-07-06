@@ -58,7 +58,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Build a bitstream
-        run: NEXTPNR_ARGS="--placer-heap-timingweight ${{ matrix.placer-heap-timingweight }}" make all
+        run: LANES=2 VIDEO_FORMAT=1080p_3g NEXTPNR_ARGS="--placer-heap-timingweight ${{ matrix.placer-heap-timingweight }}" make all
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3

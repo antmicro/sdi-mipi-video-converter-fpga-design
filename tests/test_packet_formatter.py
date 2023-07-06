@@ -14,10 +14,10 @@
 
 import cocotb
 from common import *
-from common import bbb_line, bbb_line_crc
+from common import bbb_line, bbb_line_crc, bbb_line_crc_trail
 from common import reset_module
 from cocotb.clock import Clock
-from cocotb.triggers import Timer, FallingEdge, RisingEdge
+from cocotb.triggers import RisingEdge
 from cocotb.regression import TestFactory
 
 HS_INIT_SEQ = 0xb8b8
@@ -133,9 +133,10 @@ async def test_long_packet(dut, dt, clock_period, line_test_case):
     wc = 3840
 
     if line_test_case == "bbb_1":
-        test_case = (bbb_line, bbb_line_crc)
+        test_case = (bbb_line, bbb_line_crc, bbb_line_crc_trail)
     data = test_case[0]
     crc = test_case[1]
+    trail = test_case[2]
 
     # Request long packet transfer
     dut.lp_en_i.value = 1
@@ -145,9 +146,9 @@ async def test_long_packet(dut, dt, clock_period, line_test_case):
         dut.byte_data_i.value = data[i]
         await RisingEdge(clk)
 
+    dut.crc_i.value = crc
     await RisingEdge(clk)
     assert dut.data_o.value == crc, "Packet footer error (CRC)"
-
     await check_eot(dut, int2list(crc, 16))
 
 

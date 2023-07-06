@@ -19,13 +19,31 @@ DEVICE=LIFCL-40-9BG256C
 SYNTH_ARGS?=-flatten
 YOSYS_ARGS?=-o $(PROJ)_syn.v
 NEXTPNR_ARGS?=--placer-heap-timingweight 60
-VIDEO_FORMAT?=1080p60
+VIDEO_FORMAT?=1080p_3g
 LANES?=2
 
-ifneq ($(filter $(VIDEO_FORMAT), 720p60 1080p25 1080p30),)
-CLK_FREQ = 74_25MHz
-else ifneq ($(filter $(VIDEO_FORMAT), 1080p50 1080p60),)
-CLK_FREQ = 148_5MHz
+ifneq ($(filter $(VIDEO_FORMAT), 720p_hd 720p50 720p60),)
+    DATA_RATE = hd
+    _VIDEO_FORMAT = 720p_hd
+else ifneq ($(filter $(VIDEO_FORMAT), 1080p_hd 1080p25 1080p30),)
+    DATA_RATE = hd
+    _VIDEO_FORMAT = 1080p_hd
+else ifneq ($(filter $(VIDEO_FORMAT), 1080p_3g 1080p50 1080p60),)
+    DATA_RATE = 3g
+    _VIDEO_FORMAT = 1080p_3g
+else
+    $(error Video format $(VIDEO_FORMAT) not supported)
+endif
+
+ifeq ($(PATTERN_GEN), 1)
+    PATTERN_GEN=--pattern-gen
+	_VIDEO_FORMAT = pattern_gen-$(VIDEO_FORMAT)
+    ifneq ($(filter $(VIDEO_FORMAT), 720p50 720p60 1080p25 1080p30 1080p50 1080p60),)
+    else
+        $(error Video format $(VIDEO_FORMAT) not supported with pattern generator)
+    endif
+else
+    PATTERN_GEN=
 endif
 
 # Tools binaries
@@ -35,23 +53,17 @@ PRJOXIDE?=prjoxide
 ECPPROG?=ecpprog
 
 ROOT=$(CURDIR)
-PROJ=$(VIDEO_FORMAT)-$(LANES)lanes
+PROJ=$(_VIDEO_FORMAT)-$(LANES)lanes
 BUILD_DIR=$(ROOT)/build/$(PROJ)
 TEST_DIR=$(ROOT)/tests
 VERILOG_TOP=$(BUILD_DIR)/top.v
-PDC=$(ROOT)/constraints/video_converter_$(CLK_FREQ).pdc
-TEST_MODULES = pattern_gen crc16 packet_formatter mipi_dphy cmos2dphy
-
-ifeq ($(PATTERN_GEN),1)
-PATTERN_GEN=--pattern-gen
-else
-PATTERN_GEN=
-endif
+PDC=$(ROOT)/constraints/video_converter_$(DATA_RATE)-$(LANES)lanes.pdc
+TEST_MODULES = crc16 packet_formatter mipi_dphy cmos2dphy pattern_gen
 
 ifeq ($(SIM),1)
-SIM=--sim
+    SIM=--sim
 else
-SIM=
+    SIM=
 endif
 
 all: $(PROJ).bit ## Generate verilog sources and build a bitstream
@@ -105,7 +117,7 @@ help: ## Show this help message
 	@echo -e "\033[36mNEXTPNR_ARGS\033[0m    Additional arguments for Nextpnr (default: $(NEXTPNR_ARGS))"
 	@echo -e "\033[36mPATTERN_GEN\033[0m     Set to '1' if you want to generate design with embedded pattern generator (default: None)"
 	@echo -e "\033[36mSIM\033[0m             Set to '1' if you want to generate verilog sources ready for simulation using Modelsim Lattice FPGA Edition (default: None)"
-	@echo -e "\033[36mVIDEO_FORMAT\033[0m    Video format, one of 720p60, 1080p25, 1080p30, 1080p50, 1080p60 (default: $(VIDEO_FORMAT))"
+	@echo -e "\033[36mVIDEO_FORMAT\033[0m    Video format, one of 720p_hd, 720p50, 720p60, 1080p_hd, 1080p25, 1080p30, 1080p_3g, 1080p50, 1080p60 (default: $(VIDEO_FORMAT))"
 	@echo -e "\033[36mLANES\033[0m           D-PHY Lanes, must be either 2 or 4 (default: $(LANES))"
 	@echo
 	@echo Tests:

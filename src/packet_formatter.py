@@ -16,8 +16,6 @@
 from migen import *
 from migen.fhdl.verilog import convert
 from migen.fhdl.module import Module
-from crc16 import CRC16
-from common import dphy_timings
 
 __all__ = ["PacketFormatter"]
 
@@ -60,6 +58,8 @@ class PacketFormatter(Module):
         When this signal is pulsed, packet formatter starts a long packet transfer.
     byte_data_i : Signal(16)
         Bytes that are included in a long packet.
+    crc_i : Signal(16)
+        Calculated checsksum value for currently transferred payload.
 
     phdr_xfr_done_o : Signal(1)
         Single pulse signal indicating that packet transfer is finished.
@@ -68,10 +68,9 @@ class PacketFormatter(Module):
     data_o : Signal(16)
         Data for generated header, footer or HS Trail state.
     """
-    def __init__(self, video_format="1080p60", four_lanes=False):
+    def __init__(self, timings, four_lanes=False):
         LANES = 4 if four_lanes else 2
-
-        timings = dphy_timings[video_format]
+        WC_SHIFT = LANES // 2
 
         # Inputs
         self.vc_i = Signal(2)
@@ -79,12 +78,13 @@ class PacketFormatter(Module):
         self.wc_i = Signal(16)
         self.sp_en_i = Signal()
         self.lp_en_i = Signal()
-        self.byte_data_i = Signal(16)
+        self.byte_data_i = Signal(LANES * 8)
+        self.crc_i = Signal(16)
 
         # Outputs
         self.phdr_xfr_done_o = Signal()
         self.ld_pyld_o = Signal()
-        self.data_o = Signal(16)
+        self.data_o = Signal(LANES * 8)
 
         # IOs
         self.ios = {
@@ -97,23 +97,16 @@ class PacketFormatter(Module):
             self.phdr_xfr_done_o,
             self.ld_pyld_o,
             self.data_o,
+            self.crc_i,
         }
 
         # Internal signals
         di = Signal(8)
         ecc = Signal(8)
         long_xfr = Signal()
-        hs_init_seq = Signal(16)
+        hs_init_seq = Signal(LANES * 8)
         payload_cnt = Signal(max=MAX_WIDTH)
-        crc = Signal(16)
-        last_data = Signal(16)
-
-        # CRC Generator
-        self.submodules.crc_gen = crc_gen = CRC16()
-        self.comb += [
-            crc_gen.crc_i.eq(crc),
-            crc_gen.data_i.eq(self.byte_data_i),
-        ]
+        last_data = Signal(LANES * 8)
 
         # ECC Generator
         self.sync += [
@@ -143,7 +136,6 @@ class PacketFormatter(Module):
                       self.wc_i[15]),
         ]
 
-        self.compute_crc = Signal()
         # Indicate which - long or short packet is transferred
         self.sync += [
             If(self.lp_en_i,
@@ -157,8 +149,14 @@ class PacketFormatter(Module):
 
         self.sync += [
             last_data.eq(self.data_o),
-            self.ld_pyld_o.eq(self.lp_en_i),
         ]
+
+        if LANES == 2:
+            ld_pyld_d = Signal()
+            self.sync += ld_pyld_d.eq(self.lp_en_i)
+            self.sync += self.ld_pyld_o.eq(ld_pyld_d)
+        elif LANES == 4:
+            self.sync += self.ld_pyld_o.eq(self.lp_en_i)
 
         self.comb += [
             di.eq(Cat(self.dt_i, self.vc_i)),
@@ -182,65 +180,104 @@ class PacketFormatter(Module):
         # Generate header on 2 clock cycles, then either restart CRC (set to 0xffff)
         # and proceed with long packet or generate End-of-Transmission if it's a short
         # packet
-        fsm.act("GENERATE_HEADER",
-            NextValue(payload_cnt, payload_cnt + 1),
+        if LANES == 2:
+            fsm.act("GENERATE_HEADER",
+                NextValue(payload_cnt, payload_cnt + 1),
 
-            If(payload_cnt == 0,
-                self.data_o.eq(Cat(self.dt_i, self.wc_i[:8])),
-            ).Elif(payload_cnt == 1,
-                self.data_o.eq(Cat(self.wc_i[8:], ecc)),
+                If(payload_cnt == 0,
+                    self.data_o.eq(Cat(self.dt_i, Replicate(0, 2), self.wc_i[:8])),
+                ).Elif(payload_cnt == 1,
+                    self.data_o.eq(Cat(self.wc_i[8:], ecc)),
+                    NextValue(payload_cnt, 0),
+                    If(long_xfr,
+                        NextState("WAIT_FOR_XFR_FINISH"),
+                    ).Else(
+                        NextState("EoT"),
+                    ),
+                ),
+            )
+        elif LANES == 4:
+            fsm.act("GENERATE_HEADER",
+                self.data_o.eq(Cat(self.dt_i, Replicate(0, 2), self.wc_i[:8], self.wc_i[8:], ecc)),
                 NextValue(payload_cnt, 0),
                 If(long_xfr,
-                    NextValue(crc, 0xffff),
-                    NextState("COMPUTE_CRC"),
+                    NextState("WAIT_FOR_XFR_FINISH"),
                 ).Else(
                     NextState("EoT"),
                 ),
-            ),
-        )
-        # Compute the payload checksum for word count cycles, then generate
-        # End-of-Transmission
-        fsm.act("COMPUTE_CRC",
-            self.compute_crc.eq(1),
+            )
+        # Packet payload transfer is out of the scope of packet formatter so just
+        # wait until it's finished, then generate End-of-Transmission
+        fsm.act("WAIT_FOR_XFR_FINISH",
             NextValue(payload_cnt, payload_cnt + 1),
-            NextValue(crc, crc_gen.crc_o),
 
-            If(payload_cnt == ((self.wc_i >> 1) - 1),
+            If(payload_cnt == ((self.wc_i >> WC_SHIFT) - 1),
                 NextValue(payload_cnt, 0),
                 NextState("EoT"),
             ),
         )
         # Send CRC to data output and generate the End-of-Transmission sequence
         # which consists of inverted last data MSB for time specified for HS Trail
-        fsm.act("EoT",
-            NextValue(payload_cnt, payload_cnt + 1),
-
-            If(~long_xfr,
-                If(payload_cnt == 0,
-                    self.data_o.eq(Cat(Replicate(~last_data[7], 8), Replicate(~last_data[-1], 8))),
-                ).Elif(payload_cnt != (timings["T_DATTRAIL"] - 1),
-                    self.data_o.eq(last_data),
+        # EoT is dependent on number of lanes for long packets
+        if LANES == 2:
+            fsm.act("EoT",
+                NextValue(payload_cnt, payload_cnt + 1),
+                If(~long_xfr,
+                    If(payload_cnt == 0,
+                        self.data_o.eq(Cat(Replicate(~last_data[7], 8), Replicate(~last_data[-1], 8))),
+                    ).Elif(payload_cnt != (timings["T_DATTRAIL"] - 1),
+                        self.data_o.eq(last_data),
+                    ).Else(
+                        self.data_o.eq(last_data),
+                        self.phdr_xfr_done_o.eq(1),
+                        NextState("WAIT_FOR_PACKET_REQ"),
+                    ),
                 ).Else(
-                    self.data_o.eq(last_data),
-                    self.phdr_xfr_done_o.eq(1),
-                    NextState("WAIT_FOR_PACKET_REQ"),
+                    If(payload_cnt == 0,
+                        self.data_o.eq(self.crc_i),
+                    ).Elif(payload_cnt == 1,
+                        self.data_o.eq(Cat(Replicate(~last_data[7], 8), Replicate(~last_data[-1], 8))),
+                    ).Elif(payload_cnt != timings["T_DATTRAIL"],
+                        self.data_o.eq(last_data),
+                    ).Else(
+                        self.data_o.eq(last_data),
+                        self.phdr_xfr_done_o.eq(1),
+                        NextState("WAIT_FOR_PACKET_REQ"),
+                    ),
                 ),
-            ).Else(
-                If(payload_cnt == 0,
-                    self.data_o.eq(crc_gen.crc_i),
-                ).Elif(payload_cnt == 1,
-                    self.data_o.eq(Cat(Replicate(~last_data[7], 8), Replicate(~last_data[-1], 8))),
-                ).Elif(payload_cnt != timings["T_DATTRAIL"],
-                    self.data_o.eq(last_data),
+            )
+        elif LANES == 4:
+            fsm.act("EoT",
+                NextValue(payload_cnt, payload_cnt + 1),
+                If(~long_xfr,
+                    If(payload_cnt == 0,
+                        self.data_o.eq(Cat(Replicate(~last_data[7], 8), Replicate(~last_data[15], 8),
+                                        Replicate(~last_data[23], 8), Replicate(~last_data[-1], 8))),
+                    ).Elif(payload_cnt != (timings["T_DATTRAIL"] - 1),
+                        self.data_o.eq(last_data),
+                    ).Else(
+                        self.data_o.eq(last_data),
+                        self.phdr_xfr_done_o.eq(1),
+                        NextState("WAIT_FOR_PACKET_REQ"),
+                    ),
                 ).Else(
-                    self.data_o.eq(last_data),
-                    self.phdr_xfr_done_o.eq(1),
-                    NextState("WAIT_FOR_PACKET_REQ"),
+                    If(payload_cnt == 0,
+                        self.data_o.eq(Cat(self.crc_i, Replicate(~last_data[23], 8), Replicate(~last_data[-1], 8))),
+                    ).Elif(payload_cnt == 1,
+                        self.data_o.eq(Cat(Replicate(~last_data[7], 8), Replicate(~last_data[15], 8),
+                                        Replicate(last_data[23], 8), Replicate(last_data[-1], 8))),
+                    ).Elif(payload_cnt != timings["T_DATTRAIL"],
+                        self.data_o.eq(last_data),
+                    ).Else(
+                        self.data_o.eq(last_data),
+                        self.phdr_xfr_done_o.eq(1),
+                        NextState("WAIT_FOR_PACKET_REQ"),
+                    ),
                 ),
-            ),
-        )
+            )
 
 
 if __name__ == "__main__":
-    packet_formatter = PacketFormatter()
+    from common import dphy_timings
+    packet_formatter = PacketFormatter(dphy_timings["sdi_3g-2lanes"])
     print(convert(packet_formatter, packet_formatter.ios, name="packet_formatter"))

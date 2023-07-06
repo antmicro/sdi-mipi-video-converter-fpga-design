@@ -30,6 +30,7 @@ module iver_tb;
 			$readmemh("tests/bbb.txt", image);
 
 			fv = 1;
+			#(CLK_PERIOD * 280 * (13468 / CLK_PERIOD));
 			for (j = 0; j < V_ACTIVE; j = j + 1) begin
 				lv = 1;
 				for (k = 0; k < H_ACTIVE; k = k + 1) begin

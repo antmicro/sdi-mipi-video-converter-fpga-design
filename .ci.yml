@@ -83,7 +83,7 @@ bitstream:
 
     # Build a bistream, specify video format to avoid false negatives
     # related to nextpnr issue: https://github.com/YosysHQ/nextpnr/issues/903
-    - VIDEO_FORMAT=1080p30 make all
+    - LANES=2 VIDEO_FORMAT=1080p_3g NEXTPNR_ARGS="--placer-heap-timingweight 50" make all
   artifacts:
     name: bitstream-build
     expire_in: 2 weeks

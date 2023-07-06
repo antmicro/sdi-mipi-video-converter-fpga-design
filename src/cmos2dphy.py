@@ -19,16 +19,19 @@ from migen.fhdl.module import Module
 from migen.genlib.fifo import AsyncFIFO
 from packet_formatter import PacketFormatter
 from mipi_dphy import TXDPHY
+from crc16 import CRC16
 
 __all__ = ["CMOS2DPHY"]
 
 
 class CMOS2DPHY(Module):
-    def __init__(self, mipi_dphy_ios, video_format="1080p60", four_lanes=False, sim=False):
+    def __init__(self, mipi_dphy_ios, timings, four_lanes=False, sim=False):
         assert four_lanes in [True, False]
         assert sim in [True, False]
+        LANES = 4 if four_lanes else 2
 
         self.clock_domains.cd_byte = ClockDomain("byte")
+        self.comb += ResetSignal("byte").eq(ResetSignal("sys"))
 
         # Inputs
         self.fv_i = Signal()
@@ -38,6 +41,7 @@ class CMOS2DPHY(Module):
         self.vc_i = Signal(2)
         self.dt_i = Signal(6)
         self.wc_i = Signal(16)
+        self.pll_lock_i = Signal()
 
         mipi_dphy_clk_n_io = mipi_dphy_ios["mipi_clk_n_o"]
         mipi_dphy_clk_p_io = mipi_dphy_ios["mipi_clk_p_o"]
@@ -96,12 +100,13 @@ class CMOS2DPHY(Module):
                 self.phdr_xfr_done_o,
                 self.dt_o,
                 self.wc_o,
+                self.pll_lock_i,
             ))
 
         # FIFO between pixel clock and byte clock domains
         self.submodules.fifo = fifo = ResetInserter(["sys", "byte"])(
             ClockDomainsRenamer({"write": "sys", "read": "byte"})(
-                AsyncFIFO(width=16, depth=512)
+                AsyncFIFO(width=(LANES * 8), depth=512)
             )
         )
 
@@ -112,10 +117,13 @@ class CMOS2DPHY(Module):
 
         # Packet Formatter - Low Level Protocol
         self.submodules.packet_formatter = packet_formatter = \
-            ClockDomainsRenamer("byte")(PacketFormatter())
+            ClockDomainsRenamer("byte")(PacketFormatter(timings, four_lanes))
+
+        # CRC Generator
+        self.submodules.crc_gen = crc_gen = CRC16()
 
         # Hardened TX D-PHY with TX Global Operations
-        self.submodules.tx_dphy = tx_dphy = TXDPHY(video_format=video_format, sim=sim)
+        self.submodules.tx_dphy = tx_dphy = TXDPHY(timings, four_lanes, sim)
         txgo = tx_dphy.txgo
 
         # Internal signals
@@ -123,11 +131,9 @@ class CMOS2DPHY(Module):
 
         fv_d = Signal()
         lv_d = Signal()
-        w_byte_data = Signal(16)
+        w_byte_data = Signal((LANES * 8))
         w_byte_data_en = Signal()
-        phdr_xfr_done_d = [Signal() for _ in range(2)]
         ld_pyld = Signal()
-        ld_pyld_d = [Signal() for _ in range(2)]
 
         byte_data_en = Signal()
         hs_req = Signal()
@@ -136,12 +142,10 @@ class CMOS2DPHY(Module):
         fv_start_d = Signal()
         fv_end = Signal()
         lv_start = Signal()
-        lv_end = Signal()
-        lv_start = Signal()
-        lv_end = Signal()
 
-        # fmt: off
-        self.sync += [
+        rejected_frames = Signal(3)
+
+        self.sync.byte += [
             fv_d.eq(self.fv_i),
             lv_d.eq(self.lv_i),
 
@@ -155,22 +159,64 @@ class CMOS2DPHY(Module):
             ),
 
             If(self.lv_i & ~lv_d,
-                lv_start.eq(1)
-            ).Elif(lv_d & ~self.lv_i,
-                lv_end.eq(1)
+                lv_start.eq(1),
             ).Else(
                 lv_start.eq(0),
-                lv_end.eq(0)
             ),
 
             fv_start_d.eq(fv_start),
         ]
 
+        # Merge every two 16-bit words if operating on 4 D-PHY lanes
+        pixdata_converted = Signal(LANES * 8)
+        pixdata_en = Signal()
+        if four_lanes:
+            pix_odd = Signal()
+            pixdata_d = Signal().like(pixdata)
+            self.sync += [
+                If(self.lv_i,
+                    pix_odd.eq(~pix_odd & self.lv_i),
+                ).Else(
+                    pix_odd.eq(0),
+                ),
+                pixdata_d.eq(pixdata),
+                pixdata_converted.eq(Cat(pixdata_d, pixdata)),
+                pixdata_en.eq(pix_odd & self.fv_i & self.lv_i),
+            ]
+        else:
+            self.comb += [
+                pixdata_converted.eq(pixdata),
+                pixdata_en.eq(self.fv_i & self.lv_i),
+            ]
+
+        self.comb += self.tx_dphy.pll_lock_i.eq(self.pll_lock_i)
+
+        # Calculate CRC on incoming pixels and keep the result
+        calculated_crc = Signal(16)
+        sys_lv_d = Signal()
+        self.comb += [
+            crc_gen.data_i.eq(pixdata),
+        ]
+        self.sync += [
+            sys_lv_d.eq(self.lv_i),
+            If(self.fv_i & self.lv_i,
+                calculated_crc.eq(crc_gen.crc_o),
+                crc_gen.crc_i.eq(crc_gen.crc_o),
+            ).Else(
+                calculated_crc.eq(calculated_crc),
+                crc_gen.crc_i.eq(0xffff),
+            ),
+        ]
+
         fsm.act("WAIT_FV_START",
             fifo.reset_sys.eq(1),
             fifo.reset_byte.eq(1),
-            If(fv_start,
-                NextState("FV_START"),
+            If(fv_start & self.tinit_done_o,
+                If(rejected_frames == 6,
+                    NextState("FV_START"),
+                ).Else(
+                    NextValue(rejected_frames, rejected_frames + 1),
+                )
             ),
         )
         fsm.act("FV_START",
@@ -221,7 +267,7 @@ class CMOS2DPHY(Module):
             wc.eq(self.wc_i),
             w_byte_data.eq(packet_formatter.data_o),
             w_byte_data_en.eq(1),
-            If((~ld_pyld & ld_pyld_d[0]),
+            If(ld_pyld,
                 NextState("LP_XFR"),
             ),
         )
@@ -270,23 +316,17 @@ class CMOS2DPHY(Module):
         )
 
         self.comb += [
-            txfr_req.eq(dphy_ready & (fv_start_d | fv_start | fv_end | lv_start | hs_req)),
-            byte_data_en.eq(self.fv_i & self.lv_i),
+            txfr_req.eq(dphy_ready & ~fsm.ongoing("WAIT_FV_START") &
+                (fv_start_d | fv_start | fv_end | lv_start | hs_req)),
+            byte_data_en.eq(pixdata_en),
 
             If(byte_data_en & fifo.writable,
                 fifo.we.eq(1),
-                fifo.din.eq(pixdata),
+                fifo.din.eq(pixdata_converted),
             ).Else(
                 fifo.we.eq(0),
                 fifo.din.eq(0),
             ),
-        ]
-
-        self.sync.byte += [
-            ld_pyld_d[0].eq(ld_pyld),
-            ld_pyld_d[1].eq(ld_pyld_d[0]),
-            phdr_xfr_done_d[0].eq(phdr_xfr_done),
-            phdr_xfr_done_d[1].eq(phdr_xfr_done_d[0]),
         ]
 
         # Connect Pixel to D-PHY and Packet Formatter
@@ -297,6 +337,7 @@ class CMOS2DPHY(Module):
             packet_formatter.dt_i.eq(dt),
             packet_formatter.sp_en_i.eq(sp_en),
             packet_formatter.lp_en_i.eq(lp_en),
+            packet_formatter.crc_i.eq(calculated_crc),
             phdr_xfr_done.eq(packet_formatter.phdr_xfr_done_o),
             ld_pyld.eq(packet_formatter.ld_pyld_o),
         ]
@@ -317,6 +358,7 @@ class CMOS2DPHY(Module):
 
 
 if __name__ == "__main__":
+    from common import dphy_timings
     mipi_dphy_ios = {
         "mipi_clk_n_o": Signal(name="mipi_dphy_clk_n_o"),
         "mipi_clk_p_o": Signal(name="mipi_dphy_clk_p_o"),
@@ -325,5 +367,5 @@ if __name__ == "__main__":
         "mipi_d1_n_o": Signal(name="mipi_dphy_d1_n_o"),
         "mipi_d1_p_o": Signal(name="mipi_dphy_d1_p_o"),
     }
-    cmos2dphy = CMOS2DPHY(mipi_dphy_ios, four_lanes=False, sim=True)
+    cmos2dphy = CMOS2DPHY(mipi_dphy_ios, dphy_timings["sdi_3g-2lanes"], four_lanes=False, sim=True)
     print(convert(cmos2dphy, cmos2dphy.ios, name="cmos2dphy"))

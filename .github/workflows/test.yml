@@ -38,10 +38,14 @@ jobs:
           sudo make install
 
       - name: Run tests
-        run: TRACE=1 make tests
+        run: |
+          TRACE=1 make tests | tee log.txt
+          ! cat $(find . -name "results.xml") | grep -cq "<failure />"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
           name: tests-results
-          path: tests/build/
+          path: |
+            tests/build/
+            log.txt

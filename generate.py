@@ -24,6 +24,8 @@ import argparse
 from top import Top
 from migen.fhdl.verilog import convert
 
+supported_formats = ["720p50", "720p60", "1080p25", "1080p30", "1080p50", "1080p60"]
+supported_data_rates = ["720p_hd", "1080p_hd", "1080p_3g"]
 
 def prepare_top_sources(output_dir, video_format, four_lanes, sim, pattern_gen):
     top = Top(video_format, four_lanes, sim, pattern_gen)
@@ -41,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--video-format",
         default="1080p30",
-        help='Video format ("720p60", "1080p25", "1080p30", "1080p50" or "1080p60")',
+        help='Video format (%s)' % str(supported_formats),
     )
     parser.add_argument(
         "--lanes", type=int, default=2, help='Number of lanes ("2", or "4")'
@@ -58,7 +60,17 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.video_format not in ("720p60", "1080p25", "1080p30", "1080p50", "1080p60"):
+    if args.video_format in supported_data_rates:
+        video_format = args.video_format
+        if args.pattern_gen:
+            sys.exit("Video format must be precise ()" % str(supported_formats))
+    elif args.pattern_gen:
+        video_format = "pattern_gen-" + args.video_format
+    elif args.video_format in ("720p50", "720p60", "1080p25", "1080p30"):
+        video_format = args.video_format[:-2] + "_hd"
+    elif args.video_format in ("1080p50", "1080p60"):
+        video_format = args.video_format[:-2] + "_3g"
+    else:
         sys.exit("Unsupported video format")
 
     if args.lanes not in (2, 4):
@@ -67,7 +79,7 @@ if __name__ == "__main__":
     # create names
     four_lanes = True if args.lanes == 4 else False
     lanes_name_part = "4lanes" if four_lanes else "2lanes"
-    output_dir_rel = os.path.join("build", f"{args.video_format}-{lanes_name_part}")
+    output_dir_rel = os.path.join("build", f"{video_format}-{lanes_name_part}")
     output_dir = os.path.abspath(output_dir_rel)
 
     # generate sources

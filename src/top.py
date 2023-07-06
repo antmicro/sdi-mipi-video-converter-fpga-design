@@ -18,14 +18,13 @@ from migen import *
 from migen.fhdl.verilog import convert
 from cmos2dphy import CMOS2DPHY
 
-from pattern_gen import PatternGenerator
-
+from common import get_timings
 
 class Top(Module):
     def __init__(
-        self, video_format="1080p60", four_lanes=False, sim=False, pattern_gen=False
+        self, video_format="1080p_3g", four_lanes=False, sim=False, pattern_gen=False
     ):
-        if video_format == "720p60":
+        if video_format in ["720p_hd", "720p50", "720p60"]:
             WC = 2560
         else:
             WC = 3840
@@ -96,12 +95,29 @@ class Top(Module):
         des_pix_clk = deserializer_ios["des_pix_clk_o"]
         des_reset_n = deserializer_ios["des_reset_n_i"]
         des_pll_lock = deserializer_ios["des_pll_lock_o"]
+        des_pll_lock_d = Signal().like(des_pll_lock)
 
         # Logic - clk & rst
         hfclkout = Signal(name="hfclkout")
         reset_n = Signal(name="reset_n")
         reset_n_d = Signal(name="reset_n_d", reset_less=True)
         sys_reset_n = Signal(name="sys_reset_n", reset_less=True)
+
+        # Reset due to PLL lock is extended to allow hardened D-PHY reset properly
+        pll_lock_ext_n = Signal()
+        pll_lock_cnt = Signal(max=32)
+        self.sync.hfc += [
+            des_pll_lock_d.eq(des_pll_lock),
+            If(~des_pll_lock,
+                pll_lock_cnt.eq(31),
+                pll_lock_ext_n.eq(0),
+            ).Elif(pll_lock_cnt != 0,
+                pll_lock_ext_n.eq(1),
+                pll_lock_cnt.eq(pll_lock_cnt - 1),
+            ).Else(
+                pll_lock_ext_n.eq(0),
+            )
+        ]
 
         ## Synchronize CDC reset and connect clk & rst signals
         self.sync += [
@@ -110,14 +126,17 @@ class Top(Module):
         ]
         self.comb += [
             self.cd_sys.clk.eq(des_pix_clk),
-            self.cd_sys.rst.eq(~sys_reset_n | ~des_pll_lock),
+            self.cd_sys.rst.eq(~sys_reset_n | (~des_pll_lock & des_pll_lock_d) | pll_lock_ext_n),
             self.cd_hfc.clk.eq(hfclkout),
         ]
 
         # Logic - Generate timings and MIPI D-PHY
-        self.submodules.cmos2dphy = CMOS2DPHY(mipi_dphy_ios, video_format, four_lanes)
+        timings = get_timings(video_format, four_lanes)
+        self.submodules.cmos2dphy = CMOS2DPHY(mipi_dphy_ios, timings, four_lanes)
 
         if pattern_gen:
+            from pattern_gen import PatternGenerator
+
             self.submodules.pattern_gen = PatternGenerator(video_format)
             self.comb += [
                 self.cmos2dphy.pix_data0_i.eq(self.pattern_gen.data_o[:8]),
@@ -138,11 +157,11 @@ class Top(Module):
                 self.cmos2dphy.lv_i.eq(~hblank & ~vblank),
             ]
 
-
         self.comb += [
             self.cmos2dphy.vc_i.eq(0),    # Virtual channel 0
             self.cmos2dphy.dt_i.eq(0x1e), # YUV422 8-bit
             self.cmos2dphy.wc_i.eq(WC),   # pixels * 2, 16-bit each
+            self.cmos2dphy.pll_lock_i.eq(des_pll_lock),
             user_led_o.eq(self.cmos2dphy.tx_dphy.txgo.tinit_done_o),
         ]
 
@@ -181,5 +200,5 @@ class Top(Module):
 
 
 if __name__ == "__main__":
-    top = Top(video_format="1080p60")
+    top = Top(video_format="1080p_3g")
     print(convert(top, top.ios, name="top"))
