@@ -20,6 +20,12 @@ tests_dir = os.path.dirname(os.path.realpath(__file__))
 src_path = os.path.realpath(os.path.join(tests_dir, "..", "src"))
 sys.path.append(src_path)
 
+HS_INIT_SEQ = 0xb8b8
+DT_FRAME_START = 0
+DT_FRAME_END = 1
+
+BYTE_CLK_37_125MHZ = 26932
+
 # 74.25 MHz
 PIX_CLK_74_25MHZ = 13468
 BYTE_CLK_74_25MHZ = 13466
@@ -202,3 +208,43 @@ async def reset_module(resets, clk):
     for rst in resets:
         rst.value = 0
     await RisingEdge(clk)
+
+
+def int2list(val, width=24):
+    print(val)
+    bin_str = ('{0:b}'.format(val))
+    val = [int(x) for x in bin_str]
+
+    for _ in range(width - len(val)):
+        val.insert(0, 0)
+
+    return val
+
+
+def list2int(list_val):
+    val = 0
+    for i, x in enumerate(list_val):
+        val += 2**i if x else 0
+
+    return val
+
+
+def gen_ecc(value):
+    ECC_MASK = [
+        [1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1],
+        [1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1],
+        [0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1],
+        [1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0],
+        [1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+        [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ]
+    val = int2list(value)
+    ecc = []
+    for i, mask in enumerate(ECC_MASK):
+        for j, x in enumerate(mask):
+            if len(ecc) == i and x:
+                ecc.append(val[j])
+            elif x:
+                ecc[i] = ecc[i] ^ val[j]
+    ecc = ecc[0] | (ecc[1] << 1) | (ecc[2] << 2) | (ecc[3] << 3) | (ecc[4] << 4) | (ecc[5] << 5)
+    return ecc

@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import sys
+import argparse
 from migen import *
 from migen.fhdl.verilog import convert
 from migen.fhdl.module import Module
@@ -278,6 +279,18 @@ class PacketFormatter(Module):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate Packet Fromatter RTL")
+    parser.add_argument(
+        "--lanes", type=int, default=2, help='Number of lanes ("2", or "4")'
+    )
+    args = parser.parse_args()
+
+    if args.lanes not in (2, 4):
+        sys.exit("Unsupported number of lanes")
+
+    four_lanes = True if args.lanes == 4 else False
+
     from common import dphy_timings
-    packet_formatter = PacketFormatter(dphy_timings["sdi_3g-2lanes"])
-    print(convert(packet_formatter, packet_formatter.ios, name="packet_formatter"))
+    packet_formatter = PacketFormatter(dphy_timings["sdi_3g-2lanes"], four_lanes)
+    module_name = "packet_formatter_" + str(args.lanes) + "lanes"
+    print(convert(packet_formatter, packet_formatter.ios, name=module_name))
