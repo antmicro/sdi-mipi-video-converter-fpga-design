@@ -31,12 +31,25 @@ MODULE = test_$(TOP)
 # TOPLEVEL is the name of the toplevel module in your Verilog or VHDL file
 TOPLEVEL = $(TOP)
 
+# Test specific parameters
+ifneq (,$(findstring lanes, $(TOP)))
+    ifneq (,$(findstring 4lanes, $(TOP)))
+        EXTRA_PARAMETERS = --lanes 4
+        PYTHON_NAME = $(TOP:_4lanes=)
+    else
+        EXTRA_PARAMETERS = --lanes 2
+        PYTHON_NAME = $(TOP:_2lanes=)
+    endif
+else
+    PYTHON_NAME=$(TOP)
+endif
+
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 export COCOTB_SIM_WAVE_DUMP
 test:
 	mkdir -p $(BUILD_DIR)
-	pushd $(BUILD_DIR) && python3 $(SRC_DIR)/$(TOP).py > $(TOP).v && popd
+	pushd $(BUILD_DIR) && python3 $(SRC_DIR)/$(PYTHON_NAME).py $(EXTRA_PARAMETERS) > $(TOP).v && popd
 	sed -i '/^);/a $(COCOTB_SIM_WAVE_DUMP)\n' $(BUILD_DIR)/$(TOP).v
 	COMPILE_ARGS+=$(EXTRA_COMPILE_ARGS) EXTRA_ARGS+=$(EXTRA_SIM_ARGS) $(MAKE) sim $(IGNORE_DUMP_LOGS)

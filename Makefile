@@ -58,7 +58,8 @@ BUILD_DIR=$(ROOT)/build/$(PROJ)
 TEST_DIR=$(ROOT)/tests
 VERILOG_TOP=$(BUILD_DIR)/top.v
 PDC=$(ROOT)/constraints/video_converter_$(DATA_RATE)-$(LANES)lanes.pdc
-TEST_MODULES = crc16 packet_formatter mipi_dphy cmos2dphy pattern_gen
+TEST_MODULES = crc16 packet_formatter_2lanes packet_formatter_4lanes \
+				mipi_dphy cmos2dphy pattern_gen
 
 ifeq ($(SIM),1)
     SIM=--sim
