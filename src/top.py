@@ -24,7 +24,7 @@ class Top(Module):
     def __init__(
         self, video_format="1080p_3g", four_lanes=False, sim=False, pattern_gen=False
     ):
-        if video_format in ["720p_hd", "720p50", "720p60"]:
+        if video_format in ["720p_hd", "720p25", "720p30", "720p50", "720p60"]:
             WC = 2560
         else:
             WC = 3840

@@ -17,6 +17,26 @@ from migen.fhdl.verilog import convert
 
 
 hv_timings = {
+    "720p25": {
+        "H_ACTIVE": 1280,
+        "H_BACK_PORCH": 220,
+        "H_SYNC": 40,
+        "H_FRONT_PORCH": 2420,
+        "V_ACTIVE": 720,
+        "V_BACK_PORCH": 20,
+        "V_SYNC": 5,
+        "V_FRONT_PORCH": 5,
+    },
+    "720p30": {
+        "H_ACTIVE": 1280,
+        "H_BACK_PORCH": 220,
+        "H_SYNC": 40,
+        "H_FRONT_PORCH": 1760,
+        "V_ACTIVE": 720,
+        "V_BACK_PORCH": 20,
+        "V_SYNC": 5,
+        "V_FRONT_PORCH": 5,
+    },
     "720p50": {
         "H_ACTIVE": 1280,
         "H_BACK_PORCH": 220,
