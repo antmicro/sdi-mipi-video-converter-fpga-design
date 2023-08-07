@@ -11,9 +11,6 @@ The design is reproducing SDI MIPI Bridge implementation described in details in
 
 The project consists of the following modules:
 
-* [Serial to Parallel](src/sdi2mipi.py) - generates correct timings for the Pixel to D-PHY module, it converts input VSYNC/HSYNC to FVAL/LVAL synchronization signals.
-Alternatively it is capable of generating artifficial timings and a video representing six separate vertical stripes, each in different color.
-
 * [CMOS to D-PHY](src/cmos2dphy.py) - Finite State Machine that controls MIPI CSI-2 protocol flow, assuming input signals FVAL/LVAL it transmits frames one by one.
 
 * [Checksum generator](src/crc16.py) - CRC16 checksum combinatorial generator.
