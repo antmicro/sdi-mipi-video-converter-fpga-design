@@ -62,6 +62,8 @@ bitstream:
 
     # Install Yosys
     - git clone https://github.com/YosysHQ/yosys.git && cd yosys
+    # Checkout last known working version
+    - git checkout 8b2a00102
     - make config-clang
     - make -j $(nproc)
     - make install
