@@ -40,7 +40,6 @@ jobs:
         run: |
           git clone https://github.com/YosysHQ/yosys.git && cd yosys
           # Checkout last known working version
-          git checkout 8b2a00102
           make config-clang
           make -j $(nproc)
           sudo make install
@@ -53,7 +52,7 @@ jobs:
 
       - name: Install nextpnr-nexus
         run: |
-          git clone --recursive --single-branch -b lifcl-40-dphy https://github.com/antmicro/nextpnr.git && cd nextpnr
+          git clone https://github.com/YosysHQ/nextpnr.git && cd nextpnr
           cmake -DARCH=nexus -DOXIDE_INSTALL_PREFIX=$HOME/.cargo .
           make -j $(nproc)
           sudo cp nextpnr-nexus $HOME/.cargo/bin/

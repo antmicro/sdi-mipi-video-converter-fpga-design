@@ -1,6 +1,5 @@
 stages:
-  - test
-  - build
+  - test_and_build
 
 variables:
     GIT_STRATEGY: clone
@@ -22,7 +21,7 @@ before_script:
 test:
   variables:
     SCALENODE_RAM: 16384
-  stage: test
+  stage: test_and_build
   tags: ["ace-x86_64"]
   script:
     # Install dependencies
@@ -50,7 +49,7 @@ test:
       - tests/build/
 
 bitstream:
-  stage: build
+  stage: test_and_build
   tags: ["ace-x86_64"]
   script:
     # Install dependencies
@@ -62,8 +61,6 @@ bitstream:
 
     # Install Yosys
     - git clone https://github.com/YosysHQ/yosys.git && cd yosys
-    # Checkout last known working version
-    - git checkout 8b2a00102
     - make config-clang
     - make -j $(nproc)
     - make install
@@ -76,7 +73,7 @@ bitstream:
     - cd ../..
 
     # Install nextpnr-nexus
-    - git clone --recursive --single-branch -b lifcl-40-dphy https://github.com/antmicro/nextpnr.git && cd nextpnr
+    - git clone https://github.com/YosysHQ/nextpnr.git && cd nextpnr
     - cmake -DARCH=nexus -DOXIDE_INSTALL_PREFIX=$HOME/.cargo .
     - make -j $(nproc)
     - cp nextpnr-nexus $HOME/.cargo/bin/
