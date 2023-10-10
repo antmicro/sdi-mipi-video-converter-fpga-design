@@ -10,14 +10,16 @@ The design is reproducing SDI MIPI Bridge implementation described in details in
 ## Content
 
 The project consists of the following modules:
+* [CSI-2 Finite State Machine](src/cmos2dphy.py) - FSM that controls MIPI CSI-2 protocol flow, assuming input signals `FVAL`/`LVAL` it transmits frames one by one.
+Underlying modules are synchronized between each other in each FSM state to strictly follow MIPI CSI-2 protocol.
 
-* [CMOS to D-PHY](src/cmos2dphy.py) - Finite State Machine that controls MIPI CSI-2 protocol flow, assuming input signals FVAL/LVAL it transmits frames one by one.
+* [Packet Formatter](src/packet_formatter.py) (Low Level Protocol) - MIPI CSI-2 packet generator, it generates SoT (Start of Transmission), EoT (End of Transmission), header and footer for each packet.
 
-* [Checksum generator](src/crc16.py) - CRC16 checksum combinatorial generator.
+* [Checksum generator](src/crc16.py) - combinatorial CRC16 checksum generator.
 
-* [Packet Formatter](src/packet_formatter.py) - MIPI CSI-2 packet formatter, it generates SoT, EoT, header and footer for each packet.
+* [TX Global Operations](src/mipi_dphy.py#L22) - controls D-PHY interface lanes switching between Low Power (LP) and High Speed (HS) modes.
 
-* [MIPI D-PHY](src/mipi_dphy.py) - TX Global Operations and Lattice hardened D-PHY core instance.
+* [Hardened TX D-PHY](src/mipi_dphy.py#L321-L490) - the MIPI D-PHY interface provided by the FPGA fabric, configured to operate as a transmitter, controlled by TX Global Operations.
 
 ## Prerequisites
 
