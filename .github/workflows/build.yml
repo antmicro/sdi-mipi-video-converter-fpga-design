@@ -11,6 +11,27 @@ jobs:
       - name: Setup repository
         uses: actions/checkout@v3
 
+      - name: Setup Cache Metadata
+        id: cache_metadata
+        run: |
+          cache_date=$(date +"%Y_%m_%d")
+          cache_name=cache_${{ env.TOOL_VERSION }}
+          echo "Cache date: "$cache_date
+          echo "Cache name: "$cache_name
+          echo "cache_date=$cache_date" >> "$GITHUB_ENV"
+          echo "cache_name=$cache_name" >> "$GITHUB_ENV"
+
+      - name: Setup cache
+        uses: actions/cache@v3
+        id: cache
+        timeout-minutes: 60
+        with:
+          path: |
+            /opt/verilator
+            /opt/verilator/.cache
+          key: ${{ env.cache_name }}_${{ env.cache_date }}
+          restore-keys: ${{ env.cache_name }}_
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -21,7 +42,7 @@ jobs:
         run: |
           sudo apt-get -y update
           sudo apt-get -y upgrade
-          sudo apt-get -fy install git build-essential make curl flex bison zlib1g-dev clang libreadline-dev gawk tcl-dev libffi-dev git graphviz xdot pkg-config libboost-all-dev cmake libeigen3-dev
+          sudo apt-get -fy install git build-essential make curl flex bison zlib1g-dev clang libreadline-dev gawk tcl-dev libffi-dev git graphviz xdot pkg-config libboost-all-dev cmake libeigen3-dev tclsh ant default-jre swig google-perftools uuid uuid-dev libfl-dev wget
           pip3 install -r requirements.txt
 
       - name: ccache
@@ -34,15 +55,16 @@ jobs:
       - name: Install Rust
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y
-          source "$HOME/.cargo/env"
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install Yosys
+      - name: Install Yosys with Synlig plugin
         run: |
-          git clone https://github.com/YosysHQ/yosys.git && cd yosys
-          # Checkout last known working version
-          make config-clang
-          make -j $(nproc)
-          sudo make install
+          git clone https://github.com/chipsalliance/synlig.git && cd synlig
+          pip3 install orderedmultidict
+          git submodule sync
+          git submodule update --init --recursive third_party/{surelog,yosys}
+          make install -j $(nproc)
+          echo "`pwd`/out/current/bin" >> $GITHUB_PATH
 
       - name: Install prjoxide
         run: |
@@ -56,7 +78,6 @@ jobs:
           cmake -DARCH=nexus -DOXIDE_INSTALL_PREFIX=$HOME/.cargo .
           make -j $(nproc)
           sudo cp nextpnr-nexus $HOME/.cargo/bin/
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Build a bitstream
         run: LANES=2 VIDEO_FORMAT=1080p_3g NEXTPNR_ARGS="--placer-heap-timingweight ${{ matrix.placer-heap-timingweight }}" make all

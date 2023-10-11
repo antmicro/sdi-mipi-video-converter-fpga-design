@@ -57,6 +57,9 @@ PROJ=$(_VIDEO_FORMAT)-$(LANES)lanes
 BUILD_DIR=$(ROOT)/build/$(PROJ)
 TEST_DIR=$(ROOT)/tests
 VERILOG_TOP=$(BUILD_DIR)/top.v
+FASM=$(BUILD_DIR)/$(PROJ).fasm
+JSON=$(BUILD_DIR)/$(PROJ).json
+BITSTREAM=$(BUILD_DIR)/$(PROJ).bit
 PDC=$(ROOT)/constraints/video_converter_$(DATA_RATE)-$(LANES)lanes.pdc
 TEST_MODULES = crc16 packet_formatter_2lanes packet_formatter_4lanes \
 				mipi_dphy cmos2dphy pattern_gen
@@ -67,25 +70,27 @@ else
     SIM=
 endif
 
-all: $(PROJ).bit ## Generate verilog sources and build a bitstream
+all: $(BITSTREAM) ## Generate verilog sources and build a bitstream
 
-verilog: ## Generate verilog sources
+verilog: $(VERILOG_TOP) ## Generate verilog sources
+
+$(VERILOG_TOP):
 	python3 $(ROOT)/generate.py --video-format $(VIDEO_FORMAT) --lanes $(LANES) $(PATTERN_GEN) $(SIM)
 
-$(PROJ).json: verilog $(VERILOG_TOP) $(EXTRA_VERILOG) $(MEM_INIT_FILES)
-	pushd $(BUILD_DIR) && $(YOSYS) $(YOSYS_ARGS) -ql $(PROJ)_syn.log -p "synth_nexus $(SYNTH_ARGS) -top top -json $(PROJ).json"  $(VERILOG_TOP) $(EXTRA_VERILOG) && popd
+$(JSON): $(VERILOG_TOP) $(MEM_INIT_FILES)
+	pushd $(BUILD_DIR) && $(YOSYS) $(YOSYS_ARGS) -ql $(PROJ)_syn.log -p "plugin -i systemverilog" -p "read_systemverilog $(VERILOG_TOP)" -p "synth_nexus -top top -json $(JSON)" && popd
 
-$(PROJ).fasm: $(PROJ).json $(PDC)
-	pushd $(BUILD_DIR) && $(NEXTPNR) $(NEXTPNR_ARGS) -l $(BUILD_DIR)/$(PROJ)_nextpnr.log --device $(DEVICE) --pdc $(PDC) --json $(PROJ).json --fasm $(PROJ).fasm && popd
+$(FASM): $(JSON) $(PDC)
+	pushd $(BUILD_DIR) && $(NEXTPNR) $(NEXTPNR_ARGS) -l $(BUILD_DIR)/$(PROJ)_nextpnr.log --device $(DEVICE) --pdc $(PDC) --json $(JSON) --fasm $(FASM) && popd
 
-$(PROJ).bit: $(PROJ).fasm
-	pushd $(BUILD_DIR) && $(PRJOXIDE) pack $(PROJ).fasm $(PROJ).bit && popd
+$(BITSTREAM): $(FASM)
+	pushd $(BUILD_DIR) && $(PRJOXIDE) pack $(FASM) $(BITSTREAM) && popd
 
-prog: $(PROJ).bit ## Generate a bitstream and load it to the board's SRAM
-	$(ECPPROG) -S $(PROJ).bit
+prog: $(BITSTREAM) ## Generate a bitstream and load it to the board's SRAM
+	$(ECPPROG) -S $(BITSTREAM)
 
-prog-flash: $(PROJ).bit ## Generate a bitstream and load it to the board's flash
-	$(ECPPROG) $(PROJ).bit
+prog-flash: $(BITSTREAM) ## Generate a bitstream and load it to the board's flash
+	$(ECPPROG) $(BITSTREAM)
 
 tests: ## Run all existing tests in cocotb + iverilog flow
 	$(foreach TEST, $(TEST_MODULES), \
@@ -95,7 +100,6 @@ tests: ## Run all existing tests in cocotb + iverilog flow
 clean: ## Remove all generated files for specific configuration
 	rm -rf $(BUILD_DIR)
 
-.SECONDARY:
 .PHONY: tests help verilog prog prog-flash clean
 
 .DEFAULT_GOAL := help
