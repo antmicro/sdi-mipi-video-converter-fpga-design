@@ -78,7 +78,7 @@ $(VERILOG_TOP):
 	python3 $(ROOT)/generate.py --video-format $(VIDEO_FORMAT) --lanes $(LANES) $(PATTERN_GEN) $(SIM)
 
 $(JSON): $(VERILOG_TOP) $(MEM_INIT_FILES)
-	pushd $(BUILD_DIR) && $(YOSYS) $(YOSYS_ARGS) -ql $(PROJ)_syn.log -p "plugin -i systemverilog" -p "read_systemverilog $(VERILOG_TOP)" -p "synth_nexus -top top -json $(JSON)" && popd
+	pushd $(BUILD_DIR) && $(YOSYS) $(YOSYS_ARGS) -ql $(PROJ)_syn.log -p "read_systemverilog $(VERILOG_TOP)" -p "synth_nexus -top top -json $(JSON)" && popd
 
 $(FASM): $(JSON) $(PDC)
 	pushd $(BUILD_DIR) && $(NEXTPNR) $(NEXTPNR_ARGS) -l $(BUILD_DIR)/$(PROJ)_nextpnr.log --device $(DEVICE) --pdc $(PDC) --json $(JSON) --fasm $(FASM) && popd

@@ -10,23 +10,20 @@ variables:
 
 image: debian:bookworm
 
-before_script:
-  - apt-get -y update
-  - apt-get -y upgrade
-
-  # Install dependencies
-  - apt-get -fy install python3 python3-pip python3-venv git build-essential make curl flex bison zlib1g-dev
-  - python3 -m venv env
-  - source ./env/bin/activate
-  - pip3 install -r requirements.txt
-
 test:
   variables:
     SCALENODE_RAM: 16384
   stage: test_and_build
   tags: ["ace-x86_64"]
   script:
+    - apt-get -y update
+    - apt-get -y upgrade
+
     # Install dependencies
+    - apt-get -fy install python3 python3-pip python3-venv git build-essential make curl flex bison zlib1g-dev
+    - python3 -m venv env
+    - source ./env/bin/activate
+    - pip3 install -r requirements.txt
     - apt-get install -y autoconf gperf perl autoconf ccache libgoogle-perftools-dev numactl perl-doc libfl2 libfl-dev help2man
 
     # Install icarus verilog
@@ -54,40 +51,51 @@ bitstream:
   stage: test_and_build
   tags: ["ace-x86_64"]
   script:
+    - apt-get -y update
+    - apt-get -y upgrade
+
     # Install dependencies
+    - apt-get -fy install python3 python3-pip python3-venv git build-essential make curl flex bison zlib1g-dev
+    - python3 -m venv env
+    - source ./env/bin/activate
+    - pip3 install -r requirements.txt
     - apt-get -fy install clang libreadline-dev gawk tcl-dev libffi-dev git
         graphviz xdot pkg-config libboost-all-dev cmake libeigen3-dev tclsh ant
         default-jre swig google-perftools python3-dev uuid uuid-dev libfl-dev wget
+
+    # Define CI‑portable tools prefix
+    - export TOOLS_PREFIX=/opt/fpga-tools
+    - mkdir -p $TOOLS_PREFIX/bin
+    - export PATH=$TOOLS_PREFIX/bin:$PATH
 
     # Install Rust
     - curl https://sh.rustup.rs -sSf | sh -s -- -y
     - source "$HOME/.cargo/env"
 
-    # Install Yosys with Synlig plugin
+    # Build & install Synlig (Yosys with SystemVerilog) to prefix
     - git clone https://github.com/chipsalliance/synlig.git && cd synlig
-    - pip3 install orderedmultidict
+    - pip3 install orderedmultidict --break-system-packages
     - git submodule sync
     - git submodule update --init --recursive third_party/{surelog,yosys}
-    - make install -j $(nproc)
-    - export PATH=`pwd`/out/current/bin:$PATH
+    - make install -j $(nproc) PREFIX=$TOOLS_PREFIX
+    - ln -s $TOOLS_PREFIX/bin/synlig $TOOLS_PREFIX/bin/yosys   # make `yosys` available
     - cd ..
 
-    # Install prjoxide
+    # Build & install prjoxide
     - git clone --recursive https://github.com/gatecat/prjoxide && cd prjoxide
     - cd libprjoxide
     - cargo install --path prjoxide
     - cd ../..
 
-    # Install nextpnr-nexus
+    # Build & install nextpnr-nexus to prefix
     - git clone https://github.com/YosysHQ/nextpnr.git && cd nextpnr
-    - cmake -DARCH=nexus -DOXIDE_INSTALL_PREFIX=$HOME/.cargo .
-    - make -j $(nproc)
-    - cp nextpnr-nexus $HOME/.cargo/bin/
-    - export PATH=$PATH:$HOME/.cargo/bin
-    - cd ..
+    - mkdir -p build && cd build
+    - cmake .. -DARCH=nexus -DOXIDE_INSTALL_PREFIX="$HOME/.cargo"
+    - cmake --build . -j$(nproc)
+    - cmake --install . --prefix $TOOLS_PREFIX   # install into /opt/fpga-tools/bin
+    - cd ../..
 
-    # Build a bistream, specify video format to avoid false negatives
-    # related to nextpnr issue: https://github.com/YosysHQ/nextpnr/issues/903
+    # Build the bitstream (PATH already includes /opt/fpga-tools/bin)
     - LANES=2 VIDEO_FORMAT=1080p_3g NEXTPNR_ARGS="--placer-heap-timingweight 50" make all
   artifacts:
     name: bitstream-build
