@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+*.log
+*.bit
+*.bin
+*.rpt
+env/
+synlig/
+prjoxide/
+nextpnr/

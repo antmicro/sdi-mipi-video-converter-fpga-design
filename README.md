@@ -1,12 +1,12 @@
 # SDI to MIPI CSI-2 Video Converter FPGA design
 
-Copyright (c) 2023 [Antmicro](https://antmicro.com/)
+Copyright (c) 2023-2026 [Antmicro](https://antmicro.com/)
 
 ## Introduction
 
 This is the FPGA design for the [SDI to MIPI CSI-2 Video Converter](https://github.com/antmicro/sdi-mipi-video-converter) board.
 The design converts parallel pixel input data into MIPI CSI-2 protocol packets and synchronizes them to the MIPI D-PHY hardware interface.
-The conversion process is described in details in the project [standalone documentation](https://antmicro.github.io/sdi-mipi-video-converter/).
+The conversion process is described in detail in the project [standalone documentation](https://antmicro.github.io/sdi-mipi-video-converter/).
 
 ## Content
 
@@ -40,10 +40,27 @@ There are a few additional parameters that can be added in front of the above co
 See `make help` for more information.
 The generated bitstream will be available in the `build/<variant>` directory and it is ready to be loaded onto the FPGA device.
 
+## Build the bitstream using Docker
+
+To avoid the need of resolving issues with dependencies, the repository contains `Dockerfile` which can be used to build bitstreams. Project can be built using Docker by invoking:
+```bash
+docker build -t sdi-mipi-bitstream-build .
+```
+
+**Note:** The first build may last about 30 minutes, depending on the host machine.
+
+Once the bitstreams are built, they can be copied from the Docker container to host with:
+```bash
+docker create --name temp sdi-mipi-bitstream-build
+docker cp temp:/workspace/build ./bitstreams
+docker rm temp
+```
+Bitstreams in separate folders will appear inside the `bitstreams` folder.
+
 ## Software
 
-After successful programming, the Video Converter will synchronize to SDI signal and transfer converted MIPI CSI-2 on FFC2 interface.
-Detailed instructions about software support is available in the [SDI MIPI Video Converter documentation](https://antmicro.github.io/sdi-mipi-video-converter/software.html).
+After successful programming, the Video Converter will synchronize to the SDI signal and transfer converted MIPI CSI-2 on the FFC2 interface.
+Detailed instructions about software support are available in the [SDI MIPI Video Converter documentation](https://antmicro.github.io/sdi-mipi-video-converter/software.html).
 
 ## Simulation
 
