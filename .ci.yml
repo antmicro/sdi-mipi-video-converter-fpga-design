@@ -95,8 +95,13 @@ bitstream:
     - cmake --install . --prefix $TOOLS_PREFIX   # install into /opt/fpga-tools/bin
     - cd ../..
 
-    # Build the bitstream (PATH already includes /opt/fpga-tools/bin)
-    - LANES=2 VIDEO_FORMAT=1080p_3g NEXTPNR_ARGS="--placer-heap-timingweight 50" make all
+    # Build the bitstreams
+    - LANES=2 VIDEO_FORMAT=720p60 NEXTPNR_ARGS="--placer-heap-timingweight 50" make all
+    - LANES=2 VIDEO_FORMAT=1080p30 NEXTPNR_ARGS="--placer-heap-timingweight 50" make -B all
+    - LANES=2 VIDEO_FORMAT=1080p60 NEXTPNR_ARGS="--placer-heap-timingweight 50" make -B all
+    - PATTERN_GEN=1 LANES=2 VIDEO_FORMAT=720p60 NEXTPNR_ARGS="--placer-heap-timingweight 50" make -B all
+    - PATTERN_GEN=1 LANES=2 VIDEO_FORMAT=1080p30 NEXTPNR_ARGS="--placer-heap-timingweight 50" make -B all
+    - PATTERN_GEN=1 LANES=2 VIDEO_FORMAT=1080p60 NEXTPNR_ARGS="--placer-heap-timingweight 50" make -B all
   artifacts:
     name: bitstream-build
     expire_in: 2 weeks
